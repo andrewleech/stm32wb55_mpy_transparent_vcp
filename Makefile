@@ -28,7 +28,7 @@ mpy-cross:
 # Build the module
 .PHONY: build
 build: mpy-cross
-	CFLAGS="$(EXTRA_CFLAGS)" $(MAKE) -C $(MOD_DIR) MPY_DIR=../$(MPY_DIR)
+	. ./venv/bin/activate && CFLAGS="$(EXTRA_CFLAGS)" $(MAKE) -C $(MOD_DIR) MPY_DIR=../$(MPY_DIR)
 
 # Clean the build artifacts
 .PHONY: clean
@@ -41,7 +41,7 @@ clean:
 nucleo-firmware: mpy-cross
 	@echo "Building MicroPython firmware for STM32WB55 Nucleo board..."
 	@mkdir -p $(FIRMWARE_DIR)/$(NUCLEO_BOARD)
-	@cd $(STM32_PORT) && CFLAGS="$(EXTRA_CFLAGS)" $(MAKE) BOARD=$(NUCLEO_BOARD)
+	@. ./venv/bin/activate && cd $(STM32_PORT) && CFLAGS="$(EXTRA_CFLAGS)" $(MAKE) BOARD=$(NUCLEO_BOARD)
 	@cp $(STM32_PORT)/build-$(NUCLEO_BOARD)/firmware.hex $(FIRMWARE_DIR)/$(NUCLEO_BOARD)/
 	@echo "Firmware built successfully: $(FIRMWARE_DIR)/$(NUCLEO_BOARD)/firmware.hex"
 
@@ -50,7 +50,7 @@ nucleo-firmware: mpy-cross
 dongle-firmware: mpy-cross
 	@echo "Building MicroPython firmware for STM32WB55 USB Dongle..."
 	@mkdir -p $(FIRMWARE_DIR)/$(DONGLE_BOARD)
-	@cd $(STM32_PORT) && CFLAGS="$(EXTRA_CFLAGS)" $(MAKE) BOARD=$(DONGLE_BOARD)
+	@. ./venv/bin/activate && cd $(STM32_PORT) && CFLAGS="$(EXTRA_CFLAGS)" $(MAKE) BOARD=$(DONGLE_BOARD)
 	@cp $(STM32_PORT)/build-$(DONGLE_BOARD)/firmware.hex $(FIRMWARE_DIR)/$(DONGLE_BOARD)/
 	@echo "Firmware built successfully: $(FIRMWARE_DIR)/$(DONGLE_BOARD)/firmware.hex"
 
@@ -58,13 +58,13 @@ dongle-firmware: mpy-cross
 .PHONY: flash-nucleo
 flash-nucleo: nucleo-firmware
 	@echo "Flashing firmware to STM32WB55 Nucleo board..."
-	@cd $(STM32_PORT) && $(MAKE) BOARD=$(NUCLEO_BOARD) deploy
+	@. ./venv/bin/activate && cd $(STM32_PORT) && $(MAKE) BOARD=$(NUCLEO_BOARD) deploy
 
 # Flash the USB Dongle with the firmware
 .PHONY: flash-dongle
 flash-dongle: dongle-firmware
 	@echo "Flashing firmware to STM32WB55 USB Dongle..."
-	@cd $(STM32_PORT) && $(MAKE) BOARD=$(DONGLE_BOARD) deploy
+	@. ./venv/bin/activate && cd $(STM32_PORT) && $(MAKE) BOARD=$(DONGLE_BOARD) deploy
 
 # Help text
 .PHONY: help
@@ -90,7 +90,7 @@ help:
 .PHONY: deploy
 deploy: build
 ifdef DEVICE
-	mpremote connect $(DEVICE) cp $(MOD_DIR)/build/rfcore_transparent.mpy :
+	. ./venv/bin/activate && mpremote connect $(DEVICE) cp $(MOD_DIR)/build/rfcore_transparent.mpy :
 else
-	mpremote cp $(MOD_DIR)/build/rfcore_transparent.mpy :
+	. ./venv/bin/activate && mpremote cp $(MOD_DIR)/build/rfcore_transparent.mpy :
 endif
