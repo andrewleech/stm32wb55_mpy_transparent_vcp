@@ -1,42 +1,80 @@
 # STM32WB55 BLE HCI Transparent Mode
 
-This module allows the usage of a STM32WB55 board (e.g., Nucleo or USB dongle) as a USB/UART Bluetooth HCI Dongle.
+This project provides a MicroPython native module for STM32WB55 microcontrollers, enabling them to be used as Bluetooth HCI dongles over USB or UART. The module works by creating a transparent bridge between the host (via USB/UART) and the internal Bluetooth controller in the STM32WB55.
 
 ## Features
 
-- Enables STM32WB55 boards to function as standard Bluetooth HCI adapters
-- Supports use with the Unix MicroPython port to provide Bluetooth functionality
-- Full compatibility with STM32CubeMonitor-Rf app for debugging
-- Support for activity indication via callbacks (e.g., LED blinking)
+- Creates a transparent HCI bridge for Bluetooth communication
+- Compatible with standard Bluetooth HCI tools and stacks
+- Supports STM32CubeMonitor-RF for advanced RF debugging
+- Configurable to use either REPL (stdio) or a specific stream
+- Optional activity callback for LED blinking or other feedback
 
-## Requirements
+## Build Requirements
 
-- STM32WB55 microcontroller board (Nucleo-WB55, USB dongle, etc.)
-- MicroPython firmware flashed on the device
-- Python 3.x with `mpremote` installed for deployment
+- Python 3.6 or newer with virtualenv support
+- ARM GCC toolchain for cross-compilation
+- Git for managing submodules
 
-## Building
+## Building the Module
 
-1. Clone this repository with submodules:
-   ```
-   git clone --recursive https://github.com/yourusername/stm32wb55_ble_hci.git
+To build the native module, follow these steps:
+
+1. Clone this repository:
+   ```bash
+   git clone https://github.com/yourusername/stm32wb55_ble_hci.git
    cd stm32wb55_ble_hci
    ```
 
-2. Build the native module:
-   ```
+2. Build the module:
+   ```bash
    make
    ```
 
-3. Deploy to a connected STM32WB55 board:
-   ```
+   This will:
+   - Set up a Python virtual environment
+   - Initialize required MicroPython submodules
+   - Build the mpy-cross compiler
+   - Compile the native module
+
+3. Deploy to your STM32WB55 device:
+   ```bash
+   # If your device appears with a specific port/identifier
+   make deploy DEVICE=auto-comX
+   
+   # Or with default device
    make deploy
    ```
-   
-   Optionally specify a device:
+
+## Building and Flashing MicroPython Firmware
+
+This project includes convenience targets for building and flashing MicroPython firmware to STM32WB55 boards.
+
+### For the STM32WB55 Nucleo Board
+
+1. Build the firmware:
+   ```bash
+   make nucleo-firmware
    ```
-   make deploy DEVICE=/dev/ttyACM0
+
+2. Flash the firmware to the board:
+   ```bash
+   make flash-nucleo
    ```
+
+### For the STM32WB55 USB Dongle
+
+1. Build the firmware:
+   ```bash
+   make dongle-firmware
+   ```
+
+2. Flash the firmware to the board:
+   ```bash
+   make flash-dongle
+   ```
+
+The firmware will include the necessary hardware drivers for the STM32WB55, but you'll still need to deploy the transparent mode module separately using `make deploy` after flashing the firmware.
 
 ## Usage
 
@@ -44,14 +82,12 @@ This module allows the usage of a STM32WB55 board (e.g., Nucleo or USB dongle) a
 
 ```python
 import rfcore_transparent
+
+# Use the default REPL I/O (this will take over stdio)
 rfcore_transparent.start()
 ```
 
-By default, stdio (REPL) will be used/taken over by the transparent mode.
-
-### Advanced Usage
-
-This example shows how to use a specific UART for transparent mode and add activity callbacks:
+### Advanced Usage with UART and LED Feedback
 
 ```python
 import os
@@ -61,9 +97,9 @@ sw = Pin("SW3", Pin.IN, Pin.PULL_UP)
 
 def activity(status):
     if status:
-        LED(3).on()
+        LED(3).on()  # Turn on LED when transmitting
     else:
-        LED(3).off()
+        LED(3).off() # Turn off LED when receiving/idle
 
 if sw.value():
     LED(2).on()
@@ -72,8 +108,52 @@ if sw.value():
     # Disconnect USB VCP from repl to use here
     usb = os.dupterm(None, 1)  # startup default is usb (repl) on slot 1
 
+    # Start transparent mode with USB stream and activity callback
     rfcore_transparent.start(usb, activity)
 ```
+
+### Using with a Custom UART
+
+```python
+import rfcore_transparent
+from machine import UART
+
+# Configure a UART for HCI communication
+uart = UART(1, 115200)
+
+# Start the transparent mode with the UART
+rfcore_transparent.start(uart)
+```
+
+## Example Integration with BlueZ (Linux)
+
+1. Install BlueZ utilities:
+   ```bash
+   sudo apt install bluez
+   ```
+
+2. Identify your STM32WB55 device:
+   ```bash
+   ls -l /dev/ttyACM*
+   ```
+
+3. Configure BlueZ to use your device:
+   ```bash
+   sudo btattach -B /dev/ttyACM0 -S 115200 -P h4
+   ```
+
+4. Scan for devices:
+   ```bash
+   sudo hcitool lescan
+   ```
+
+## Project Structure
+
+- `src/` - Source code for the native module
+  - `stm32wb55_transparent.c` - Main implementation of the HCI bridge
+  - `stm32wb55_local_commands.c` - Commands handled locally by CPU1
+  - `rfcore_transparent.py` - Python wrapper for the native module
+- `micropython/` - MicroPython submodule (required for building)
 
 ## License
 
@@ -82,4 +162,4 @@ if sw.value():
 
 ## Acknowledgments
 
-This module is derived from the STMicroelectronics BLE_TransparentModeVCP example code with modifications to work as a MicroPython native module.
+This module is derived from the STMicroelectronics BLE_TransparentModeVCP example code with modifications to work as a MicroPython native module. Originally adapted by Andrew Leech, with further improvements and standalone project structure.
