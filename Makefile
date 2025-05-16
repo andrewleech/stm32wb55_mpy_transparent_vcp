@@ -11,7 +11,7 @@ STM32_PORT = $(MPY_DIR)/ports/stm32
 
 # Board definitions
 NUCLEO_BOARD = NUCLEO_WB55
-DONGLE_BOARD = STM32WB5500G
+DONGLE_BOARD = USBDONGLE_WB55
 
 # Compiler flags
 EXTRA_CFLAGS = -Wno-dangling-pointer
@@ -41,7 +41,7 @@ clean:
 nucleo-firmware: mpy-cross
 	@echo "Building MicroPython firmware for STM32WB55 Nucleo board..."
 	@mkdir -p $(FIRMWARE_DIR)/$(NUCLEO_BOARD)
-	@. ./venv/bin/activate && cd $(STM32_PORT) && CFLAGS="$(EXTRA_CFLAGS)" $(MAKE) BOARD=$(NUCLEO_BOARD)
+	@. ./venv/bin/activate && cd $(STM32_PORT) && CFLAGS="$(EXTRA_CFLAGS)" $(MAKE) BOARD=$(NUCLEO_BOARD) submodules all
 	@cp $(STM32_PORT)/build-$(NUCLEO_BOARD)/firmware.hex $(FIRMWARE_DIR)/$(NUCLEO_BOARD)/
 	@echo "Firmware built successfully: $(FIRMWARE_DIR)/$(NUCLEO_BOARD)/firmware.hex"
 
@@ -50,7 +50,7 @@ nucleo-firmware: mpy-cross
 dongle-firmware: mpy-cross
 	@echo "Building MicroPython firmware for STM32WB55 USB Dongle..."
 	@mkdir -p $(FIRMWARE_DIR)/$(DONGLE_BOARD)
-	@. ./venv/bin/activate && cd $(STM32_PORT) && CFLAGS="$(EXTRA_CFLAGS)" $(MAKE) BOARD=$(DONGLE_BOARD)
+	@. ./venv/bin/activate && cd $(STM32_PORT) && CFLAGS="$(EXTRA_CFLAGS)" $(MAKE) BOARD=$(DONGLE_BOARD) submodules all
 	@cp $(STM32_PORT)/build-$(DONGLE_BOARD)/firmware.hex $(FIRMWARE_DIR)/$(DONGLE_BOARD)/
 	@echo "Firmware built successfully: $(FIRMWARE_DIR)/$(DONGLE_BOARD)/firmware.hex"
 
