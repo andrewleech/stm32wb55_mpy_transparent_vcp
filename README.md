@@ -32,6 +32,11 @@ To build the native module, follow these steps:
    ```
 
    This will:
+<<<<<<< HEAD
+=======
+   - Set up a Python virtual environment
+   - Initialize required MicroPython submodules
+>>>>>>> 1e1e0f76b5 (Add firmware build targets for STM32WB55 Nucleo and Dongle boards)
    - Build the mpy-cross compiler
    - Compile the native module
 
@@ -152,6 +157,7 @@ rfcore_transparent.start(uart)
   - `stm32wb55_local_commands.c` - Commands handled locally by CPU1
   - `rfcore_transparent.py` - Python wrapper for the native module
 - `micropython/` - MicroPython submodule (required for building)
+<<<<<<< HEAD
 - `.github/workflows/` - GitHub Actions for CI/CD
 
 ## Continuous Integration
@@ -163,6 +169,8 @@ This project uses GitHub Actions to automatically build:
 3. MicroPython firmware for the STM32WB55 USB Dongle
 
 Each build is available as an artifact for 7 days. When creating a release (by tagging the repository), all builds are automatically packaged into a single ZIP file that's attached to the GitHub Release.
+=======
+>>>>>>> 1e1e0f76b5 (Add firmware build targets for STM32WB55 Nucleo and Dongle boards)
 
 ## License
 

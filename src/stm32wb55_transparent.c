@@ -19,44 +19,26 @@
 #define HCI_KIND_LOCAL_CMD (0x20) // Used by STM32CubeMonitor to query the device
 #define HCI_KIND_LOCAL_RSP (0x21)
 
+// Define STATIC macro if not defined
+#ifndef STATIC
+#define STATIC static
+#endif
 
 // Callback python function, can be used to provide feedback on each comm, eg. blink LED.
 void mpy_run_callback(mp_obj_t callback, bool on) {
     if (callback != mp_const_none) {
-        mp_call_function_n_kw(callback, 1, 0, (mp_obj_t[]) {(on) ? mp_const_true : mp_const_false});
+        mp_obj_t args[] = {(on) ? mp_const_true : mp_const_false};
+        mp_call_function_n_kw(callback, 1, 0, args);
     }
 }
 
-
-mp_obj_t mp_stream_write(mp_obj_t stream_out, const void *buf, size_t len, byte flags) {
-    int errcode;
-    const mp_stream_p_t *stream_out_p = ((mp_obj_base_t *)stream_out)->type->protocol;
-    mp_uint_t out_sz = stream_out_p->write(stream_out, buf, len, &errcode);
-    if (out_sz == MP_STREAM_ERROR) {
-        return mp_const_false;
-    }
-    return mp_const_none;
+// Helper function to create a bytes object from buffer
+STATIC mp_obj_t bytes_from_buffer(const uint8_t *buf, size_t len) {
+    mp_obj_t bytes_obj = mp_obj_new_bytes(buf, len);
+    return bytes_obj;
 }
 
-mp_uint_t mp_stream_read(mp_obj_t stream_in, void *buf, size_t len) {
-    int errcode;
-    const mp_stream_p_t *stream_in_p = ((mp_obj_base_t *)stream_in)->type->protocol;
-    mp_uint_t out_sz = stream_in_p->read(stream_in, buf, len, &errcode);
-    if (out_sz == MP_STREAM_ERROR) {
-        return -1;
-    }
-    return out_sz;
-}
-
-mp_uint_t mp_stream_poll(mp_obj_t stream_in, uintptr_t poll_flags) {
-    int errcode = 0;
-    mp_uint_t ret = 0;
-    const mp_stream_p_t *stream_in_p = ((mp_obj_base_t *)stream_in)->type->protocol;
-    ret = stream_in_p->ioctl(stream_in, MP_STREAM_POLL, poll_flags, &errcode);
-    return ret;
-}
-
-
+// The main function - entry point for the native module
 STATIC mp_obj_t rfcore_transparent(mp_obj_t stream_in, mp_obj_t stream_out, mp_obj_t callback) {
     // Make sure we have suitable stream objects.
     mp_get_stream_raise(stream_in, MP_STREAM_OP_READ | MP_STREAM_OP_IOCTL);
@@ -74,9 +56,14 @@ STATIC mp_obj_t rfcore_transparent(mp_obj_t stream_in, mp_obj_t stream_out, mp_o
     int state = 0;
     int cmd_type = 0;
 
+    // We'll use these functions from MicroPython for streaming
+    mp_obj_t write_method = mp_load_attr(stream_out, MP_QSTR_write);
+    mp_obj_t read_method = mp_load_attr(stream_in, MP_QSTR_read);
+
     while (true) {
         // Sleep briefly to allow micropython background processing.
-        mp_call_function_n_kw(sleep_ms_obj, 1, 0, (mp_obj_t[]) {MP_OBJ_NEW_SMALL_INT(1)});
+        mp_obj_t sleep_args[] = {MP_OBJ_NEW_SMALL_INT(1)};
+        mp_call_function_n_kw(sleep_ms_obj, 1, 0, sleep_args);
 
         if (state == STATE_IN_PAYLOAD && len == 0) {
             size_t rsp_len = 0;
@@ -100,7 +87,11 @@ STATIC mp_obj_t rfcore_transparent(mp_obj_t stream_in, mp_obj_t stream_out, mp_o
 
             if (rsp_len > 0) {
                 DEBUG_printf("rsp: len 0x%x\n", rsp_len);
-                mp_stream_write(stream_out, (const char *)buf, rsp_len, MP_STREAM_RW_WRITE);
+                // Create a bytes object and write to stream
+                mp_obj_t bytes_obj = bytes_from_buffer(buf, rsp_len);
+                // Use mp_call_function_n_kw instead of mp_call_function_1
+                mp_obj_t write_args[] = {bytes_obj};
+                mp_call_function_n_kw(write_method, 1, 0, write_args);
                 mpy_run_callback(callback, false);
             } else {
                 DEBUG_printf("rsp: None\n");
@@ -110,60 +101,71 @@ STATIC mp_obj_t rfcore_transparent(mp_obj_t stream_in, mp_obj_t stream_out, mp_o
             len = 0;
             state = STATE_IDLE;
 
-        } else if (mp_stream_poll(stream_in, MP_STREAM_POLL_RD) & MP_STREAM_POLL_RD) {
-            uint8_t c;
-            int32_t ret = mp_stream_read(stream_in, &c, 1);
-            if (ret < 1) {
-                continue;
-            }
-            mpy_run_callback(callback, true);
-
-            if (state == STATE_IDLE) {
-                if (c == HCI_KIND_BT_CMD || c == HCI_KIND_BT_ACL || c == HCI_KIND_BT_EVENT || c == HCI_KIND_VENDOR_RESPONSE || c == HCI_KIND_VENDOR_EVENT || HCI_KIND_LOCAL_CMD) {
-                    cmd_type = c;
-                    state = STATE_NEED_LEN;
-                    buf[rx++] = c;
-                    len = 0;
-                    DEBUG_printf("cmd_type 0x%x\n", c);
-                } else {
-                    DEBUG_printf("cmd_type unknown 0x%x\n", c);
+        } else {
+            // Try reading one byte
+            mp_obj_t read_args[] = {MP_OBJ_NEW_SMALL_INT(1)};
+            mp_obj_t data = mp_call_function_n_kw(read_method, 1, 0, read_args);
+            
+            // Check if we got any data
+            // Instead of using mp_obj_is_str_or_bytes, directly check the type
+            const mp_obj_type_t *type = mp_obj_get_type(data);
+            if ((type == &mp_type_str || type == &mp_type_bytes) && mp_obj_len(data) > 0) {
+                // Get the byte
+                size_t data_len;
+                const byte *data_ptr = (const byte*)mp_obj_str_get_data(data, &data_len);
+                if (data_len > 0) {
+                    uint8_t c = data_ptr[0];
+                    mpy_run_callback(callback, true);
+                    
+                    if (state == STATE_IDLE) {
+                        if (c == HCI_KIND_BT_CMD || c == HCI_KIND_BT_ACL || c == HCI_KIND_BT_EVENT || 
+                            c == HCI_KIND_VENDOR_RESPONSE || c == HCI_KIND_VENDOR_EVENT || c == HCI_KIND_LOCAL_CMD) {
+                            cmd_type = c;
+                            state = STATE_NEED_LEN;
+                            buf[rx++] = c;
+                            len = 0;
+                            DEBUG_printf("cmd_type 0x%x\n", c);
+                        } else {
+                            DEBUG_printf("cmd_type unknown 0x%x\n", c);
+                        }
+                    } else if (state == STATE_NEED_LEN) {
+                        buf[rx++] = c;
+                        if (cmd_type == HCI_KIND_BT_ACL && rx == 4) {
+                            len = c;
+                        }
+                        if (cmd_type == HCI_KIND_BT_ACL && rx == 5) {
+                            len += ((size_t)c) << 8;
+                            DEBUG_printf("len 0x%x\n", c);
+                            state = STATE_IN_PAYLOAD;
+                        }
+                        if (cmd_type == HCI_KIND_BT_EVENT && rx == 3) {
+                            len = c;
+                            DEBUG_printf("len 0x%x\n", c);
+                            state = STATE_IN_PAYLOAD;
+                        }
+                        if (cmd_type == HCI_KIND_BT_CMD && rx == 4) {
+                            len = c;
+                            DEBUG_printf("len 0x%x\n", c);
+                            state = STATE_IN_PAYLOAD;
+                        }
+                        if (cmd_type == HCI_KIND_LOCAL_CMD && rx == 4) {
+                            len = c;
+                            DEBUG_printf("len 0x%x\n", c);
+                            state = STATE_IN_PAYLOAD;
+                        }
+                    } else if (state == STATE_IN_PAYLOAD) {
+                        buf[rx++] = c;
+                        --len;
+                    }
                 }
-            } else if (state == STATE_NEED_LEN) {
-                buf[rx++] = c;
-                if (cmd_type == HCI_KIND_BT_ACL && rx == 4) {
-                    len = c;
-                }
-                if (cmd_type == HCI_KIND_BT_ACL && rx == 5) {
-                    len += ((size_t)c) << 8;
-                    DEBUG_printf("len 0x%x\n", c);
-                    state = STATE_IN_PAYLOAD;
-                }
-                if (cmd_type == HCI_KIND_BT_EVENT && rx == 3) {
-                    len = c;
-                    DEBUG_printf("len 0x%x\n", c);
-                    state = STATE_IN_PAYLOAD;
-                }
-                if (cmd_type == HCI_KIND_BT_CMD && rx == 4) {
-                    len = c;
-                    DEBUG_printf("len 0x%x\n", c);
-                    state = STATE_IN_PAYLOAD;
-                }
-                if (cmd_type == HCI_KIND_LOCAL_CMD && rx == 4) {
-                    len = c;
-                    DEBUG_printf("len 0x%x\n", c);
-                    state = STATE_IN_PAYLOAD;
-                }
-            } else if (state == STATE_IN_PAYLOAD) {
-                buf[rx++] = c;
-                --len;
             }
         }
     }
 
     return mp_const_none;
 }
-MP_DEFINE_CONST_FUN_OBJ_3(rfcore_transparent_obj, rfcore_transparent);
 
+MP_DEFINE_CONST_FUN_OBJ_3(rfcore_transparent_obj, rfcore_transparent);
 
 mp_obj_t mpy_init(mp_obj_fun_bc_t *self, size_t n_args, size_t n_kw, mp_obj_t *args) {
     // This must be first, it sets up the globals dict and other things
