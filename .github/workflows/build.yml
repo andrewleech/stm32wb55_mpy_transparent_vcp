@@ -1,0 +1,103 @@
+name: Build
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  build-natmod:
+    runs-on: ubuntu-latest
+    container: micropython/build-micropython-arm
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          submodules: 'recursive'
+      
+      - name: Build native module
+        run: |
+          CFLAGS="-Wno-dangling-pointer" make build
+      
+      - name: Upload native module
+        uses: actions/upload-artifact@v3
+        with:
+          name: rfcore-transparent-natmod
+          path: src/rfcore_transparent.mpy
+          retention-days: 7
+
+  build-nucleo-firmware:
+    runs-on: ubuntu-latest
+    container: micropython/build-micropython-arm
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          submodules: 'recursive'
+      
+      - name: Build Nucleo firmware
+        run: |
+          CFLAGS="-Wno-dangling-pointer" make nucleo-firmware
+      
+      - name: Upload Nucleo firmware
+        uses: actions/upload-artifact@v3
+        with:
+          name: nucleo-wb55-firmware
+          path: |
+            micropython/ports/stm32/build-NUCLEO_WB55/firmware.hex
+            micropython/ports/stm32/build-NUCLEO_WB55/firmware.bin
+            micropython/ports/stm32/build-NUCLEO_WB55/firmware.dfu
+            micropython/ports/stm32/build-NUCLEO_WB55/firmware.elf
+          retention-days: 7
+
+  build-dongle-firmware:
+    runs-on: ubuntu-latest
+    container: micropython/build-micropython-arm
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          submodules: 'recursive'
+      
+      - name: Build USB Dongle firmware
+        run: |
+          CFLAGS="-Wno-dangling-pointer" make dongle-firmware
+      
+      - name: Upload USB Dongle firmware
+        uses: actions/upload-artifact@v3
+        with:
+          name: dongle-stmwb55-firmware
+          path: |
+            micropython/ports/stm32/build-STM32WB5500G/firmware.hex
+            micropython/ports/stm32/build-STM32WB5500G/firmware.bin
+            micropython/ports/stm32/build-STM32WB5500G/firmware.dfu
+            micropython/ports/stm32/build-STM32WB5500G/firmware.elf
+          retention-days: 7
+
+  build-release:
+    runs-on: ubuntu-latest
+    needs: [build-natmod, build-nucleo-firmware, build-dongle-firmware]
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        
+      - name: Create release ZIP file
+        run: |
+          mkdir -p release
+          cp rfcore-transparent-natmod/rfcore_transparent.mpy release/
+          cp -r nucleo-wb55-firmware release/
+          cp -r dongle-stmwb55-firmware release/
+          cd release
+          zip -r ../stm32wb55_ble_hci_release.zip .
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: stm32wb55_ble_hci_release.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

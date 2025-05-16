@@ -154,6 +154,17 @@ rfcore_transparent.start(uart)
   - `stm32wb55_local_commands.c` - Commands handled locally by CPU1
   - `rfcore_transparent.py` - Python wrapper for the native module
 - `micropython/` - MicroPython submodule (required for building)
+- `.github/workflows/` - GitHub Actions for CI/CD
+
+## Continuous Integration
+
+This project uses GitHub Actions to automatically build:
+
+1. The native module (`rfcore_transparent.mpy`)
+2. MicroPython firmware for the STM32WB55 Nucleo board
+3. MicroPython firmware for the STM32WB55 USB Dongle
+
+Each build is available as an artifact for 7 days. When creating a release (by tagging the repository), all builds are automatically packaged into a single ZIP file that's attached to the GitHub Release.
 
 ## License
 
