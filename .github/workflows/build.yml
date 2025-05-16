@@ -23,7 +23,7 @@ jobs:
           CFLAGS="-Wno-dangling-pointer" make build
       
       - name: Upload native module
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: rfcore-transparent-natmod
           path: src/rfcore_transparent.mpy
@@ -43,7 +43,7 @@ jobs:
           CFLAGS="-Wno-dangling-pointer" make nucleo-firmware
       
       - name: Upload Nucleo firmware
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: nucleo-wb55-firmware
           path: |
@@ -67,7 +67,7 @@ jobs:
           CFLAGS="-Wno-dangling-pointer" make dongle-firmware
       
       - name: Upload USB Dongle firmware
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: dongle-stmwb55-firmware
           path: |
