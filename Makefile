@@ -6,6 +6,7 @@
 # Configuration
 MPY_DIR = micropython
 MOD_DIR = src
+FIRMWARE_DIR = firmware
 STM32_PORT = $(MPY_DIR)/ports/stm32
 
 # Board definitions
@@ -39,15 +40,19 @@ clean:
 .PHONY: nucleo-firmware
 nucleo-firmware: mpy-cross
 	@echo "Building MicroPython firmware for STM32WB55 Nucleo board..."
+	@mkdir -p $(FIRMWARE_DIR)/$(NUCLEO_BOARD)
 	@cd $(STM32_PORT) && CFLAGS="$(EXTRA_CFLAGS)" $(MAKE) BOARD=$(NUCLEO_BOARD)
-	@echo "Firmware built successfully: $(STM32_PORT)/build-$(NUCLEO_BOARD)/firmware.hex"
+	@cp $(STM32_PORT)/build-$(NUCLEO_BOARD)/firmware.hex $(FIRMWARE_DIR)/$(NUCLEO_BOARD)/
+	@echo "Firmware built successfully: $(FIRMWARE_DIR)/$(NUCLEO_BOARD)/firmware.hex"
 
 # Build the firmware for the STM32WB55 USB Dongle
 .PHONY: dongle-firmware
 dongle-firmware: mpy-cross
 	@echo "Building MicroPython firmware for STM32WB55 USB Dongle..."
+	@mkdir -p $(FIRMWARE_DIR)/$(DONGLE_BOARD)
 	@cd $(STM32_PORT) && CFLAGS="$(EXTRA_CFLAGS)" $(MAKE) BOARD=$(DONGLE_BOARD)
-	@echo "Firmware built successfully: $(STM32_PORT)/build-$(DONGLE_BOARD)/firmware.hex"
+	@cp $(STM32_PORT)/build-$(DONGLE_BOARD)/firmware.hex $(FIRMWARE_DIR)/$(DONGLE_BOARD)/
+	@echo "Firmware built successfully: $(FIRMWARE_DIR)/$(DONGLE_BOARD)/firmware.hex"
 
 # Flash the Nucleo board with the firmware
 .PHONY: flash-nucleo
@@ -85,7 +90,7 @@ help:
 .PHONY: deploy
 deploy: build
 ifdef DEVICE
-	mpremote connect $(DEVICE) cp $(MOD_DIR)/rfcore_transparent.mpy :
+	mpremote connect $(DEVICE) cp $(MOD_DIR)/build/rfcore_transparent.mpy :
 else
-	mpremote cp $(MOD_DIR)/rfcore_transparent.mpy :
+	mpremote cp $(MOD_DIR)/build/rfcore_transparent.mpy :
 endif
