@@ -18,7 +18,7 @@ jobs:
         with:
           submodules: 'recursive'
       
-      - name: Set up Python
+      - name: Set up Python environment
         run: |
           apt-get update && apt-get install -y python3-venv
           python3 -m venv venv
@@ -26,8 +26,7 @@ jobs:
           pip install pyelftools
       
       - name: Build native module
-        run: |
-          CFLAGS="-Wno-dangling-pointer" make build
+        run: make build
       
       - name: Upload native module
         uses: actions/upload-artifact@v4
@@ -45,22 +44,15 @@ jobs:
         with:
           submodules: 'recursive'
       
-      - name: Set up Python
+      - name: Set up Python environment
         run: |
           apt-get update && apt-get install -y python3-venv
           python3 -m venv venv
           . venv/bin/activate
           pip install pyelftools
       
-      - name: Initialize submodules
-        run: |
-          cd micropython && git submodule update --init lib/stm32lib
-      
       - name: Build Nucleo firmware
-        run: |
-          mkdir -p firmware/NUCLEO_WB55
-          cd micropython/ports/stm32 && CFLAGS="-Wno-dangling-pointer" make BOARD=NUCLEO_WB55 submodules all
-          cp micropython/ports/stm32/build-NUCLEO_WB55/firmware.* firmware/NUCLEO_WB55/
+        run: make nucleo-firmware
       
       - name: Upload Nucleo firmware
         uses: actions/upload-artifact@v4
@@ -78,22 +70,15 @@ jobs:
         with:
           submodules: 'recursive'
       
-      - name: Set up Python
+      - name: Set up Python environment
         run: |
           apt-get update && apt-get install -y python3-venv
           python3 -m venv venv
           . venv/bin/activate
           pip install pyelftools
       
-      - name: Initialize submodules
-        run: |
-          cd micropython && git submodule update --init lib/stm32lib
-      
       - name: Build USB Dongle firmware
-        run: |
-          mkdir -p firmware/USBDONGLE_WB55
-          cd micropython/ports/stm32 && CFLAGS="-Wno-dangling-pointer" make BOARD=USBDONGLE_WB55 submodules all
-          cp micropython/ports/stm32/build-USBDONGLE_WB55/firmware.* firmware/USBDONGLE_WB55/
+        run: make dongle-firmware
       
       - name: Upload USB Dongle firmware
         uses: actions/upload-artifact@v4

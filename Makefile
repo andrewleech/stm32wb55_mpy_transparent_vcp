@@ -42,8 +42,8 @@ nucleo-firmware: mpy-cross
 	@echo "Building MicroPython firmware for STM32WB55 Nucleo board..."
 	@mkdir -p $(FIRMWARE_DIR)/$(NUCLEO_BOARD)
 	@. ./venv/bin/activate && cd $(STM32_PORT) && CFLAGS="$(EXTRA_CFLAGS)" $(MAKE) BOARD=$(NUCLEO_BOARD) submodules all
-	@cp $(STM32_PORT)/build-$(NUCLEO_BOARD)/firmware.hex $(FIRMWARE_DIR)/$(NUCLEO_BOARD)/
-	@echo "Firmware built successfully: $(FIRMWARE_DIR)/$(NUCLEO_BOARD)/firmware.hex"
+	@cp $(STM32_PORT)/build-$(NUCLEO_BOARD)/firmware.* $(FIRMWARE_DIR)/$(NUCLEO_BOARD)/
+	@echo "Firmware built successfully: $(FIRMWARE_DIR)/$(NUCLEO_BOARD)/"
 
 # Build the firmware for the STM32WB55 USB Dongle
 .PHONY: dongle-firmware
@@ -51,8 +51,8 @@ dongle-firmware: mpy-cross
 	@echo "Building MicroPython firmware for STM32WB55 USB Dongle..."
 	@mkdir -p $(FIRMWARE_DIR)/$(DONGLE_BOARD)
 	@. ./venv/bin/activate && cd $(STM32_PORT) && CFLAGS="$(EXTRA_CFLAGS)" $(MAKE) BOARD=$(DONGLE_BOARD) submodules all
-	@cp $(STM32_PORT)/build-$(DONGLE_BOARD)/firmware.hex $(FIRMWARE_DIR)/$(DONGLE_BOARD)/
-	@echo "Firmware built successfully: $(FIRMWARE_DIR)/$(DONGLE_BOARD)/firmware.hex"
+	@cp $(STM32_PORT)/build-$(DONGLE_BOARD)/firmware.* $(FIRMWARE_DIR)/$(DONGLE_BOARD)/
+	@echo "Firmware built successfully: $(FIRMWARE_DIR)/$(DONGLE_BOARD)/"
 
 # Flash the Nucleo board with the firmware
 .PHONY: flash-nucleo
