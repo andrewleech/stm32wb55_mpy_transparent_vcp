@@ -18,7 +18,7 @@ jobs:
         fetch-depth: '1000'
     - run: |
         git fetch --prune --unshallow --tags
-    - uses: actions/setup-python@v4
+    - uses: actions/setup-python@v5
     - name: Install build tools
       run: pip install build
     - name: Build mpremote wheel
