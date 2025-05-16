@@ -95,7 +95,7 @@ jobs:
           zip -r ../stm32wb55_ble_hci_release.zip .
       
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: stm32wb55_ble_hci_release.zip
           generate_release_notes: true
