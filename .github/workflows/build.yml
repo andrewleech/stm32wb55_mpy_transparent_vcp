@@ -14,19 +14,26 @@ jobs:
     container: micropython/build-micropython-arm
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: 'recursive'
+      
+      - name: Set up Python
+        run: |
+          apt-get update && apt-get install -y python3-venv
+          python3 -m venv venv
+          . venv/bin/activate
+          pip install pyelftools
       
       - name: Build native module
         run: |
           CFLAGS="-Wno-dangling-pointer" make build
       
       - name: Upload native module
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: rfcore-transparent-natmod
-          path: src/rfcore_transparent.mpy
+          path: src/build/rfcore_transparent.mpy
           retention-days: 7
 
   build-nucleo-firmware:
@@ -34,23 +41,32 @@ jobs:
     container: micropython/build-micropython-arm
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: 'recursive'
       
+      - name: Set up Python
+        run: |
+          apt-get update && apt-get install -y python3-venv
+          python3 -m venv venv
+          . venv/bin/activate
+          pip install pyelftools
+      
+      - name: Initialize submodules
+        run: |
+          cd micropython && git submodule update --init lib/stm32lib
+      
       - name: Build Nucleo firmware
         run: |
-          CFLAGS="-Wno-dangling-pointer" make nucleo-firmware
+          mkdir -p firmware/NUCLEO_WB55
+          cd micropython/ports/stm32 && CFLAGS="-Wno-dangling-pointer" make BOARD=NUCLEO_WB55 submodules all
+          cp micropython/ports/stm32/build-NUCLEO_WB55/firmware.* firmware/NUCLEO_WB55/
       
       - name: Upload Nucleo firmware
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: nucleo-wb55-firmware
-          path: |
-            micropython/ports/stm32/build-NUCLEO_WB55/firmware.hex
-            micropython/ports/stm32/build-NUCLEO_WB55/firmware.bin
-            micropython/ports/stm32/build-NUCLEO_WB55/firmware.dfu
-            micropython/ports/stm32/build-NUCLEO_WB55/firmware.elf
+          path: firmware/NUCLEO_WB55/
           retention-days: 7
 
   build-dongle-firmware:
@@ -58,23 +74,32 @@ jobs:
     container: micropython/build-micropython-arm
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: 'recursive'
       
+      - name: Set up Python
+        run: |
+          apt-get update && apt-get install -y python3-venv
+          python3 -m venv venv
+          . venv/bin/activate
+          pip install pyelftools
+      
+      - name: Initialize submodules
+        run: |
+          cd micropython && git submodule update --init lib/stm32lib
+      
       - name: Build USB Dongle firmware
         run: |
-          CFLAGS="-Wno-dangling-pointer" make dongle-firmware
+          mkdir -p firmware/USBDONGLE_WB55
+          cd micropython/ports/stm32 && CFLAGS="-Wno-dangling-pointer" make BOARD=USBDONGLE_WB55 submodules all
+          cp micropython/ports/stm32/build-USBDONGLE_WB55/firmware.* firmware/USBDONGLE_WB55/
       
       - name: Upload USB Dongle firmware
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: dongle-stmwb55-firmware
-          path: |
-            micropython/ports/stm32/build-STM32WB5500G/firmware.hex
-            micropython/ports/stm32/build-STM32WB5500G/firmware.bin
-            micropython/ports/stm32/build-STM32WB5500G/firmware.dfu
-            micropython/ports/stm32/build-STM32WB5500G/firmware.elf
+          name: dongle-wb55-firmware
+          path: firmware/USBDONGLE_WB55/
           retention-days: 7
 
   build-release:
@@ -83,21 +108,20 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v3
-        
+        uses: actions/download-artifact@v4
+      
       - name: Create release ZIP file
         run: |
           mkdir -p release
           cp rfcore-transparent-natmod/rfcore_transparent.mpy release/
-          cp -r nucleo-wb55-firmware release/
-          cp -r dongle-stmwb55-firmware release/
+          cp -r nucleo-wb55-firmware release/nucleo
+          cp -r dongle-wb55-firmware release/dongle
           cd release
           zip -r ../stm32wb55_ble_hci_release.zip .
       
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: stm32wb55_ble_hci_release.zip
           generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
