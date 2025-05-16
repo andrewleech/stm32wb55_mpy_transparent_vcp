@@ -54,8 +54,8 @@ typedef struct {
     bool initialized;
 } rfcore_transparent_state_t;
 
-// Static state variable to maintain context between iterations
-static rfcore_transparent_state_t trans_state;
+// Global state variable to maintain context between iterations
+rfcore_transparent_state_t trans_state;
 
 // The main function - entry point for the native module
 STATIC mp_obj_t rfcore_transparent(mp_obj_t stream_in, mp_obj_t stream_out, mp_obj_t callback) {
