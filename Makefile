@@ -8,6 +8,7 @@ MPY_DIR = micropython
 MOD_DIR = src
 FIRMWARE_DIR = firmware
 STM32_PORT = $(MPY_DIR)/ports/stm32
+VENV_DIR = .venv
 
 # Board definitions
 NUCLEO_BOARD = NUCLEO_WB55
@@ -25,10 +26,21 @@ all: build
 mpy-cross:
 	CFLAGS="$(EXTRA_CFLAGS)" $(MAKE) -C $(MPY_DIR)/mpy-cross
 
+# Create virtual environment if it doesn't exist
+.PHONY: venv
+venv:
+	@if [ ! -d "$(VENV_DIR)" ]; then \
+		echo "Creating virtual environment in $(VENV_DIR)..."; \
+		python3 -m venv $(VENV_DIR); \
+		. ./$(VENV_DIR)/bin/activate && pip install -U pip wheel mpremote pyelftools pyusb; \
+	else \
+		echo "Virtual environment already exists in $(VENV_DIR)"; \
+	fi
+
 # Build the module
 .PHONY: build
-build: mpy-cross
-	. ./venv/bin/activate && CFLAGS="$(EXTRA_CFLAGS)" $(MAKE) -C $(MOD_DIR) MPY_DIR=../$(MPY_DIR)
+build: venv mpy-cross
+	. ./$(VENV_DIR)/bin/activate && CFLAGS="$(EXTRA_CFLAGS)" $(MAKE) -C $(MOD_DIR) MPY_DIR=../$(MPY_DIR)
 
 # Clean the build artifacts
 .PHONY: clean
@@ -41,7 +53,7 @@ clean:
 nucleo-firmware: mpy-cross
 	@echo "Building MicroPython firmware for STM32WB55 Nucleo board..."
 	@mkdir -p $(FIRMWARE_DIR)/$(NUCLEO_BOARD)
-	@. ./venv/bin/activate && cd $(STM32_PORT) && CFLAGS="$(EXTRA_CFLAGS)" $(MAKE) BOARD=$(NUCLEO_BOARD) submodules all
+	@. ./$(VENV_DIR)/bin/activate && cd $(STM32_PORT) && CFLAGS="$(EXTRA_CFLAGS)" $(MAKE) BOARD=$(NUCLEO_BOARD) submodules all
 	@cp $(STM32_PORT)/build-$(NUCLEO_BOARD)/firmware.* $(FIRMWARE_DIR)/$(NUCLEO_BOARD)/
 	@echo "Firmware built successfully: $(FIRMWARE_DIR)/$(NUCLEO_BOARD)/"
 
@@ -50,7 +62,7 @@ nucleo-firmware: mpy-cross
 dongle-firmware: mpy-cross
 	@echo "Building MicroPython firmware for STM32WB55 USB Dongle..."
 	@mkdir -p $(FIRMWARE_DIR)/$(DONGLE_BOARD)
-	@. ./venv/bin/activate && cd $(STM32_PORT) && CFLAGS="$(EXTRA_CFLAGS)" $(MAKE) BOARD=$(DONGLE_BOARD) submodules all
+	@. ./$(VENV_DIR)/bin/activate && cd $(STM32_PORT) && CFLAGS="$(EXTRA_CFLAGS)" $(MAKE) BOARD=$(DONGLE_BOARD) submodules all
 	@cp $(STM32_PORT)/build-$(DONGLE_BOARD)/firmware.* $(FIRMWARE_DIR)/$(DONGLE_BOARD)/
 	@echo "Firmware built successfully: $(FIRMWARE_DIR)/$(DONGLE_BOARD)/"
 
@@ -58,13 +70,13 @@ dongle-firmware: mpy-cross
 .PHONY: flash-nucleo
 flash-nucleo: nucleo-firmware
 	@echo "Flashing firmware to STM32WB55 Nucleo board..."
-	@. ./venv/bin/activate && cd $(STM32_PORT) && $(MAKE) BOARD=$(NUCLEO_BOARD) deploy
+	@. ./$(VENV_DIR)/bin/activate && cd $(STM32_PORT) && $(MAKE) BOARD=$(NUCLEO_BOARD) deploy
 
 # Flash the USB Dongle with the firmware
 .PHONY: flash-dongle
 flash-dongle: dongle-firmware
 	@echo "Flashing firmware to STM32WB55 USB Dongle..."
-	@. ./venv/bin/activate && cd $(STM32_PORT) && $(MAKE) BOARD=$(DONGLE_BOARD) deploy
+	@. ./$(VENV_DIR)/bin/activate && cd $(STM32_PORT) && $(MAKE) BOARD=$(DONGLE_BOARD) deploy
 
 # Help text
 .PHONY: help
@@ -74,6 +86,7 @@ help:
 	@echo "Targets:"
 	@echo "  all              - Build the native module (default)"
 	@echo "  build            - Same as 'all'"
+	@echo "  venv             - Create Python virtual environment if it doesn't exist"
 	@echo "  clean            - Clean build artifacts"
 	@echo "  deploy           - Build and copy module to the target device"
 	@echo "  nucleo-firmware  - Build MicroPython firmware for STM32WB55 Nucleo board"
@@ -90,7 +103,7 @@ help:
 .PHONY: deploy
 deploy: build
 ifdef DEVICE
-	. ./venv/bin/activate && mpremote connect $(DEVICE) cp $(MOD_DIR)/build/rfcore_transparent.mpy :
+	. ./$(VENV_DIR)/bin/activate && mpremote connect $(DEVICE) cp $(MOD_DIR)/build/rfcore_transparent.mpy :
 else
-	. ./venv/bin/activate && mpremote cp $(MOD_DIR)/build/rfcore_transparent.mpy :
+	. ./$(VENV_DIR)/bin/activate && mpremote cp $(MOD_DIR)/build/rfcore_transparent.mpy :
 endif
