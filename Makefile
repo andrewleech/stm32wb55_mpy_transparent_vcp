@@ -78,11 +78,16 @@ flash-dongle: dongle-firmware
 	@echo "Flashing firmware to STM32WB55 USB Dongle..."
 	@. ./$(VENV_DIR)/bin/activate && cd $(STM32_PORT) && $(MAKE) BOARD=$(DONGLE_BOARD) deploy
 
-# Build the Unix port with Bluetooth support
+# Build the Unix port (with Bluetooth support if available)
 .PHONY: unix-port
 unix-port: mpy-cross
-	@echo "Building MicroPython Unix port with Bluetooth support..."
-	@. ./$(VENV_DIR)/bin/activate && cd $(MPY_DIR) && $(MAKE) -C ports/unix MICROPY_PY_BLUETOOTH=1 MICROPY_BLUETOOTH_NIMBLE=1 submodules all
+	@echo "Building MicroPython Unix port..."
+	@. ./$(VENV_DIR)/bin/activate && cd $(MPY_DIR) && $(MAKE) -C ports/unix submodules
+	@. ./$(VENV_DIR)/bin/activate && cd $(MPY_DIR) && $(MAKE) -C ports/unix all
+	@echo "Unix port built successfully. Binary location: $(MPY_DIR)/ports/unix/build-standard/micropython"
+	@echo ""
+	@echo "Note: To build with Bluetooth support, you may need to modify mpconfigport.h"
+	@echo "in the Unix port to include the Bluetooth configuration options."
 
 # Help text
 .PHONY: help
