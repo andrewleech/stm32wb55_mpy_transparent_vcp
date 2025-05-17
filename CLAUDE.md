@@ -32,7 +32,7 @@ pip install -U pip wheel mpremote pyelftools pyusb
 # Build the native module
 make
 
-# Clean the build artifacts
+# Clean all build artifacts (native module, STM32 ports, Unix port)
 make clean
 ```
 

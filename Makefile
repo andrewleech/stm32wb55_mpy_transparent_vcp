@@ -45,8 +45,13 @@ build: venv mpy-cross
 # Clean the build artifacts
 .PHONY: clean
 clean:
+	@echo "Cleaning build artifacts..."
 	$(MAKE) -C $(MOD_DIR) clean MPY_DIR=../$(MPY_DIR)
 	$(MAKE) -C $(MPY_DIR)/mpy-cross clean
+	@. ./$(VENV_DIR)/bin/activate && cd $(STM32_PORT) && $(MAKE) BOARD=$(NUCLEO_BOARD) clean
+	@. ./$(VENV_DIR)/bin/activate && cd $(STM32_PORT) && $(MAKE) BOARD=$(DONGLE_BOARD) clean
+	@. ./$(VENV_DIR)/bin/activate && cd $(MPY_DIR) && $(MAKE) -C ports/unix clean
+	@echo "All build artifacts cleaned"
 
 # Build the firmware for the STM32WB55 Nucleo board
 .PHONY: nucleo-firmware
@@ -82,12 +87,9 @@ flash-dongle: dongle-firmware
 .PHONY: unix-port
 unix-port: mpy-cross
 	@echo "Building MicroPython Unix port..."
-	@. ./$(VENV_DIR)/bin/activate && cd $(MPY_DIR) && $(MAKE) -C ports/unix submodules
-	@. ./$(VENV_DIR)/bin/activate && cd $(MPY_DIR) && $(MAKE) -C ports/unix all
+	@. ./$(VENV_DIR)/bin/activate && cd $(MPY_DIR) && $(MAKE) -C ports/unix  MICROPY_PY_BLUETOOTH=1 MICROPY_BLUETOOTH_NIMBLE=1 submodules
+	@. ./$(VENV_DIR)/bin/activate && cd $(MPY_DIR) && $(MAKE) -C ports/unix  MICROPY_PY_BLUETOOTH=1 MICROPY_BLUETOOTH_NIMBLE=1 all
 	@echo "Unix port built successfully. Binary location: $(MPY_DIR)/ports/unix/build-standard/micropython"
-	@echo ""
-	@echo "Note: To build with Bluetooth support, you may need to modify mpconfigport.h"
-	@echo "in the Unix port to include the Bluetooth configuration options."
 
 # Help text
 .PHONY: help
