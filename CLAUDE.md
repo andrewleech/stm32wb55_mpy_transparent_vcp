@@ -44,6 +44,9 @@ make nucleo-firmware
 
 # Build firmware for STM32WB55 USB Dongle
 make dongle-firmware
+
+# Build MicroPython Unix port with Bluetooth support
+make unix-port
 ```
 
 ### Flashing Firmware

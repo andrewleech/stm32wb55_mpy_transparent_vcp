@@ -78,6 +78,12 @@ flash-dongle: dongle-firmware
 	@echo "Flashing firmware to STM32WB55 USB Dongle..."
 	@. ./$(VENV_DIR)/bin/activate && cd $(STM32_PORT) && $(MAKE) BOARD=$(DONGLE_BOARD) deploy
 
+# Build the Unix port with Bluetooth support
+.PHONY: unix-port
+unix-port: mpy-cross
+	@echo "Building MicroPython Unix port with Bluetooth support..."
+	@. ./$(VENV_DIR)/bin/activate && cd $(MPY_DIR) && $(MAKE) -C ports/unix MICROPY_PY_BLUETOOTH=1 MICROPY_BLUETOOTH_NIMBLE=1 submodules all
+
 # Help text
 .PHONY: help
 help:
@@ -93,6 +99,7 @@ help:
 	@echo "  dongle-firmware  - Build MicroPython firmware for STM32WB55 USB Dongle"
 	@echo "  flash-nucleo     - Flash firmware to STM32WB55 Nucleo board"
 	@echo "  flash-dongle     - Flash firmware to STM32WB55 USB Dongle"
+	@echo "  unix-port        - Build MicroPython Unix port with Bluetooth support"
 	@echo "  help             - Show this help message"
 	@echo ""
 	@echo "Optional environment variables:"
