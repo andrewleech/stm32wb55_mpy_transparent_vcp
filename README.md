@@ -219,12 +219,56 @@ You can use the STM32WB55 as a Bluetooth adapter for the MicroPython Unix port:
    print("BLE state after activation:", ble.active())
    ```
 
+7. Direct HCI command access:
+   
+   The `-DMICROPY_PY_BLUETOOTH_ENABLE_HCI_CMD` flag in the Makefile enables a special feature that allows direct access to the Bluetooth controller via raw HCI commands:
+   
+   ```python
+   import bluetooth
+   import struct
+   
+   # Create BLE instance
+   ble = bluetooth.BLE()
+   ble.active(True)
+   
+   # Prepare buffers for HCI command
+   # Example: Read Local Version Information command
+   cmd_buf = bytearray(0)  # Empty payload for this command
+   resp_buf = bytearray(20)  # Buffer for the response
+   
+   # Send HCI command directly to controller
+   # ogf=0x04 (Information Parameters), ocf=0x0001 (Read Local Version Information)
+   status = ble.hci_cmd(0x04, 0x0001, cmd_buf, resp_buf)
+   
+   if status == 0:
+       # Parse the response
+       print("HCI command success! Response:", bytes(resp_buf).hex())
+       
+       # For this particular command, parse the version information
+       if len(resp_buf) >= 9:
+           hci_version = resp_buf[0]
+           hci_revision = struct.unpack("<H", resp_buf[1:3])[0]
+           lmp_version = resp_buf[3]
+           manufacturer = struct.unpack("<H", resp_buf[4:6])[0]
+           lmp_subversion = struct.unpack("<H", resp_buf[6:8])[0]
+           
+           print(f"HCI Version: {hci_version}")
+           print(f"HCI Revision: {hci_revision}")
+           print(f"LMP Version: {lmp_version}")
+           print(f"Manufacturer: {manufacturer}")
+           print(f"LMP Subversion: {lmp_subversion}")
+   else:
+       print(f"HCI command failed with status: {status}")
+   ```
+
 ## Project Structure
 
 - `src/` - Source code for the native module
   - `stm32wb55_transparent.c` - Main implementation of the HCI bridge
   - `stm32wb55_local_commands.c` - Commands handled locally by CPU1
   - `rfcore_transparent.py` - Python wrapper for the native module
+- `examples/` - Example scripts showcasing project functionality
+  - `hci_cmd_example.py` - Demonstrates using raw HCI commands with the enabled `ble.hci_cmd` feature
 - `micropython/` - MicroPython submodule (required for building)
 - `.github/workflows/` - GitHub Actions for CI/CD
 
