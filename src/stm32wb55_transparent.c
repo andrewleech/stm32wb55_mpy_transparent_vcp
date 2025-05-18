@@ -1,8 +1,26 @@
 #include "py/dynruntime.h"
 #include "py/binary.h"
 #include "py/objarray.h"
+#include <string.h> // For memmove
 
 #include "stm32wb55_local_commands.h"
+
+// Define needed QSTR constants if they're not already defined
+#ifndef MP_QSTR_bluetooth
+#define MP_QSTR_bluetooth MP_QSTR_bluetooth
+#endif
+
+#ifndef MP_QSTR_BLE
+#define MP_QSTR_BLE MP_QSTR_BLE
+#endif
+
+#ifndef MP_QSTR_active
+#define MP_QSTR_active MP_QSTR_active
+#endif
+
+#ifndef MP_QSTR_hci_cmd
+#define MP_QSTR_hci_cmd MP_QSTR_hci_cmd
+#endif
 
 // Don't enable this if stdio is used for transp comms.
 #define DEBUG_printf(...)  // mp_printf(&mp_plat_print, "rfcore_transp: " __VA_ARGS__)
@@ -40,8 +58,10 @@ STATIC mp_obj_t bytes_from_buffer(const uint8_t *buf, size_t len) {
 
 // State structure to maintain between iterations
 typedef struct {
-    mp_obj_t stm_module;
-    mp_obj_t rfcore_ble_hci_obj;
+    mp_obj_t bluetooth_module;
+    mp_obj_t ble_class;
+    mp_obj_t ble_instance;
+    mp_obj_t hci_cmd_method;
     mp_obj_t time_module;
     mp_obj_t sleep_ms_obj;
     mp_obj_t write_method;
@@ -65,8 +85,17 @@ STATIC mp_obj_t rfcore_transparent(mp_obj_t stream_in, mp_obj_t stream_out, mp_o
 
     // Initialize the state if first time
     if (!trans_state.initialized) {
-        trans_state.stm_module = mp_import_name(MP_QSTR_stm, mp_const_none, MP_OBJ_NEW_SMALL_INT(0));
-        trans_state.rfcore_ble_hci_obj = mp_import_from(trans_state.stm_module, MP_QSTR_rfcore_ble_hci);
+        // Import and initialize the Bluetooth module
+        trans_state.bluetooth_module = mp_import_name(MP_QSTR_bluetooth, mp_const_none, MP_OBJ_NEW_SMALL_INT(0));
+        trans_state.ble_class = mp_import_from(trans_state.bluetooth_module, MP_QSTR_BLE);
+        trans_state.ble_instance = mp_call_function_0(trans_state.ble_class);
+        
+        // Activate the Bluetooth interface
+        mp_obj_t active_method = mp_load_attr(trans_state.ble_instance, MP_QSTR_active);
+        mp_call_function_1(active_method, mp_const_true);
+        
+        // Get the hci_cmd method
+        trans_state.hci_cmd_method = mp_load_attr(trans_state.ble_instance, MP_QSTR_hci_cmd);
 
         trans_state.time_module = mp_import_name(MP_QSTR_time, mp_const_none, MP_OBJ_NEW_SMALL_INT(0));
         trans_state.sleep_ms_obj = mp_import_from(trans_state.time_module, MP_QSTR_sleep_ms);
@@ -94,14 +123,85 @@ STATIC mp_obj_t rfcore_transparent(mp_obj_t stream_in, mp_obj_t stream_out, mp_o
             DEBUG_printf("rsp: len 0x%x\n", rsp_len);
 
         } else {
-            // Forward command to rfcore (cpu2).
-            DEBUG_printf("rfcore_ble_hci_cmd\n");
-            mp_obj_array_t cmd = {{&mp_type_bytearray}, BYTEARRAY_TYPECODE, 0, trans_state.rx, trans_state.buf};
-            mp_obj_array_t rsp = {{&mp_type_bytearray}, BYTEARRAY_TYPECODE, 0, sizeof(trans_state.buf), trans_state.buf};
-
-            mp_obj_t args[] = {MP_OBJ_FROM_PTR(&cmd), MP_OBJ_FROM_PTR(&rsp)};
-            mp_obj_t rsp_len_o = mp_call_function_n_kw(trans_state.rfcore_ble_hci_obj, 2, 0, args);
-            rsp_len = mp_obj_get_int(rsp_len_o);
+            // Forward command to Bluetooth controller
+            DEBUG_printf("bluetooth_ble_hci_cmd\n");
+            
+            // Extract HCI command information from packet
+            uint8_t type = trans_state.buf[0]; // HCI command type (0x01 for BT commands)
+            
+            // For regular BT commands:
+            // OCF is the lower 10 bits of the 16-bit opcode (bytes 1-2)
+            // OGF is the upper 6 bits of the 16-bit opcode (bytes 1-2)
+            // HCI opcode is little endian, byte 1 is LSB, byte 2 is MSB
+            uint16_t opcode = trans_state.buf[1] | (trans_state.buf[2] << 8);
+            uint16_t ocf = opcode & 0x03FF;
+            uint16_t ogf = (opcode >> 10) & 0x003F;
+            
+            // Get the parameter length and data
+            uint8_t param_len = trans_state.buf[3];
+            
+            // Create bytearrays for the request and response data
+            mp_obj_t cmd_data = mp_obj_new_bytearray(param_len, &trans_state.buf[4]);
+            mp_obj_t rsp_data = mp_obj_new_bytearray(sizeof(trans_state.buf), trans_state.buf);
+            
+            // Call the hci_cmd method with the appropriate parameters
+            mp_obj_t args[] = {trans_state.ble_instance, 
+                               MP_OBJ_NEW_SMALL_INT(ogf), 
+                               MP_OBJ_NEW_SMALL_INT(ocf), 
+                               cmd_data, 
+                               rsp_data};
+            
+            // Call the method and get the status
+            mp_obj_t status_obj = mp_call_method_n_kw(4, 0, args);
+            uint8_t status = mp_obj_get_int(status_obj);
+            
+            // For HCI commands, we need to create a proper HCI response packet
+            if (status == 0) {
+                // The buffer now contains the raw response data
+                // But we need to format it as a proper HCI event packet
+                
+                // Make space for the HCI event header
+                memmove(&trans_state.buf[3], trans_state.buf, param_len); // Move response data
+                
+                // HCI Event packet format:
+                // Byte 0: HCI Event Type (0x04)
+                // Byte 1: Command Complete Event Code (0x0E)
+                // Byte 2: Parameter Length
+                // Byte 3-5: Command Complete Header (num_pkts, cmd_opcode)
+                // Byte 6+: Response data
+                
+                trans_state.buf[0] = 0x04; // Event packet type
+                trans_state.buf[1] = 0x0E; // Command Complete event code
+                
+                // The total length is parameter length + 3 bytes for the Command Complete header
+                uint8_t total_len = param_len + 3;
+                trans_state.buf[2] = total_len;
+                
+                // Command Complete header:
+                trans_state.buf[3] = 0x01; // Number of command packets allowed
+                trans_state.buf[4] = trans_state.buf[1]; // Original opcode LSB
+                trans_state.buf[5] = trans_state.buf[2]; // Original opcode MSB
+                
+                // Status byte (returned by controller)
+                trans_state.buf[6] = status;
+                
+                // Total response length is:
+                // 3 bytes HCI event header +
+                // 3 bytes Command Complete header +
+                // 1 byte status +
+                // response data length (minus the status byte already included in 'param_len')
+                rsp_len = 7 + (param_len > 0 ? param_len - 1 : 0);
+            } else {
+                // There was an error, create a simple Command Status packet
+                trans_state.buf[0] = 0x04; // Event packet type
+                trans_state.buf[1] = 0x0F; // Command Status event code
+                trans_state.buf[2] = 0x04; // Parameter length
+                trans_state.buf[3] = status; // Status byte
+                trans_state.buf[4] = 0x01; // Number of command packets allowed
+                trans_state.buf[5] = trans_state.buf[1]; // Original opcode LSB
+                trans_state.buf[6] = trans_state.buf[2]; // Original opcode MSB
+                rsp_len = 7;
+            }
         }
 
         if (rsp_len > 0) {
