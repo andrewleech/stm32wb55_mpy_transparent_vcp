@@ -145,6 +145,80 @@ rfcore_transparent.start(uart)
    sudo hcitool lescan
    ```
 
+## Using with MicroPython Unix Port
+
+You can use the STM32WB55 as a Bluetooth adapter for the MicroPython Unix port:
+
+1. Flash the dongle with MicroPython firmware:
+   ```bash
+   make flash-dongle
+   ```
+
+2. Deploy both the native module and the example `main.py` to the dongle:
+   ```bash
+   # If your device appears with a specific port/identifier
+   make deploy-all DEVICE=auto-comX
+   
+   # Or with default device
+   make deploy-all
+   ```
+
+   You can also deploy them separately:
+   ```bash
+   # Just the module
+   make deploy
+   
+   # Just main.py
+   mpremote cp main.py :
+   ```
+   
+   The included `main.py` provides LED feedback using the blue LED and looks like this:
+   ```python
+   import rfcore_transparent
+   import time
+   from machine import Pin
+   import os
+
+   # Wait a moment for USB to initialize
+   time.sleep(1)
+
+   # Set up the blue LED for activity indication
+   led_blue = Pin.board.LED_BLUE
+   led_blue.init(Pin.OUT)
+
+   def activity_callback(state):
+       """Turn LED on when receiving data, off when transmitting response"""
+       if state:
+           led_blue.on()
+       else:
+           led_blue.off()
+
+   # Disconnect USB VCP from REPL to use for HCI
+   usb = os.dupterm(None, 1)  # startup default is USB (REPL) on slot 1
+
+   # Start transparent mode with USB stream and activity callback
+   rfcore_transparent.start(usb, activity_callback)
+   ```
+
+4. Build the MicroPython Unix port with Bluetooth support:
+   ```bash
+   make unix-port
+   ```
+
+5. Run the Unix port with the dongle as the Bluetooth HCI device:
+   ```bash
+   MICROPYBTUSB=/dev/ttyACM0 micropython/ports/unix/build-standard/micropython
+   ```
+
+6. Now you can use Bluetooth from the Unix port:
+   ```python
+   import bluetooth
+   ble = bluetooth.BLE()
+   print("BLE state:", ble.active())
+   ble.active(True)
+   print("BLE state after activation:", ble.active())
+   ```
+
 ## Project Structure
 
 - `src/` - Source code for the native module

@@ -15,7 +15,7 @@ NUCLEO_BOARD = NUCLEO_WB55
 DONGLE_BOARD = USBDONGLE_WB55
 
 # Compiler flags
-EXTRA_CFLAGS = -Wno-dangling-pointer
+EXTRA_CFLAGS = -DMICROPY_PY_BLUETOOTH_ENABLE_HCI_CMD -Wno-dangling-pointer
 
 # Default target will build the native module
 .PHONY: all
@@ -102,6 +102,7 @@ help:
 	@echo "  venv             - Create Python virtual environment if it doesn't exist"
 	@echo "  clean            - Clean build artifacts"
 	@echo "  deploy           - Build and copy module to the target device"
+	@echo "  deploy-all       - Build and copy module and main.py to the target device"
 	@echo "  nucleo-firmware  - Build MicroPython firmware for STM32WB55 Nucleo board"
 	@echo "  dongle-firmware  - Build MicroPython firmware for STM32WB55 USB Dongle"
 	@echo "  flash-nucleo     - Flash firmware to STM32WB55 Nucleo board"
@@ -120,4 +121,15 @@ ifdef DEVICE
 	. ./$(VENV_DIR)/bin/activate && mpremote connect $(DEVICE) cp $(MOD_DIR)/build/rfcore_transparent.mpy :
 else
 	. ./$(VENV_DIR)/bin/activate && mpremote cp $(MOD_DIR)/build/rfcore_transparent.mpy :
+endif
+
+# Deploy both the module and main.py to a connected device
+.PHONY: deploy-all
+deploy-all: build
+ifdef DEVICE
+	. ./$(VENV_DIR)/bin/activate && mpremote connect $(DEVICE) cp $(MOD_DIR)/build/rfcore_transparent.mpy :
+	. ./$(VENV_DIR)/bin/activate && mpremote connect $(DEVICE) cp main.py :
+else
+	. ./$(VENV_DIR)/bin/activate && mpremote cp $(MOD_DIR)/build/rfcore_transparent.mpy :
+	. ./$(VENV_DIR)/bin/activate && mpremote cp main.py :
 endif
