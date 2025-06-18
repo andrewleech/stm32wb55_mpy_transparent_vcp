@@ -127,9 +127,11 @@ endif
 .PHONY: deploy-all
 deploy-all: build
 ifdef DEVICE
-	. ./$(VENV_DIR)/bin/activate && mpremote connect $(DEVICE) cp $(MOD_DIR)/rfcore_transparent.mpy :
-	. ./$(VENV_DIR)/bin/activate && mpremote connect $(DEVICE) cp main.py :
+	. ./$(VENV_DIR)/bin/activate && mpremote connect $(DEVICE) resume cp $(MOD_DIR)/rfcore_transparent.mpy :
+	. ./$(VENV_DIR)/bin/activate && mpremote connect $(DEVICE) resume cp boot.py :
+	. ./$(VENV_DIR)/bin/activate && mpremote connect $(DEVICE) resume cp main.py :
 else
-	. ./$(VENV_DIR)/bin/activate && mpremote cp $(MOD_DIR)/rfcore_transparent.mpy :
-	. ./$(VENV_DIR)/bin/activate && mpremote cp main.py :
+	. ./$(VENV_DIR)/bin/activate && mpremote resume cp $(MOD_DIR)/rfcore_transparent.mpy :
+	. ./$(VENV_DIR)/bin/activate && mpremote resume cp boot.py :
+	. ./$(VENV_DIR)/bin/activate && mpremote resume cp main.py :
 endif

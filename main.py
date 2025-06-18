@@ -21,9 +21,6 @@ import rfcore_transparent
 # Wait a moment for USB to initialize
 time.sleep(1)
 
-# Configure USB for dual CDC interfaces
-pyb.usb_mode("VCP+VCP")  # Configure USB with two VCP interfaces
-time.sleep(0.5)  # Give USB time to reconfigure
 
 # Set up the blue LED for activity indication
 led_blue = Pin.board.LED_BLUE
@@ -35,11 +32,6 @@ def activity_callback(state):
         led_blue.on()
     else:
         led_blue.off()
-
-# Get USB VCP instance for the second CDC interface
-# First interface (index 0) remains connected to REPL
-# Second interface (index 1) will be used for HCI
-hci_vcp = pyb.USB_VCP(1)
 
 print("Starting BLE HCI transparent mode on second USB CDC interface...")
 print("You can continue to use this interface for debug/REPL")
