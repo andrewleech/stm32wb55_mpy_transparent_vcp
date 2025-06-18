@@ -1,7 +1,7 @@
 #include "py/dynruntime.h"
 #include "py/binary.h"
 #include "py/objarray.h"
-#include <string.h> // For memmove
+// No need for string.h - we'll use mp_fun_table.memmove_
 
 #include "stm32wb55_local_commands.h"
 
@@ -88,11 +88,12 @@ STATIC mp_obj_t rfcore_transparent(mp_obj_t stream_in, mp_obj_t stream_out, mp_o
         // Import and initialize the Bluetooth module
         trans_state.bluetooth_module = mp_import_name(MP_QSTR_bluetooth, mp_const_none, MP_OBJ_NEW_SMALL_INT(0));
         trans_state.ble_class = mp_import_from(trans_state.bluetooth_module, MP_QSTR_BLE);
-        trans_state.ble_instance = mp_call_function_0(trans_state.ble_class);
+        trans_state.ble_instance = mp_call_function_n_kw(trans_state.ble_class, 0, 0, NULL);
         
         // Activate the Bluetooth interface
         mp_obj_t active_method = mp_load_attr(trans_state.ble_instance, MP_QSTR_active);
-        mp_call_function_1(active_method, mp_const_true);
+        mp_obj_t active_args[] = {mp_const_true};
+        mp_call_function_n_kw(active_method, 1, 0, active_args);
         
         // Get the hci_cmd method
         trans_state.hci_cmd_method = mp_load_attr(trans_state.ble_instance, MP_QSTR_hci_cmd);
@@ -127,7 +128,7 @@ STATIC mp_obj_t rfcore_transparent(mp_obj_t stream_in, mp_obj_t stream_out, mp_o
             DEBUG_printf("bluetooth_ble_hci_cmd\n");
             
             // Extract HCI command information from packet
-            uint8_t type = trans_state.buf[0]; // HCI command type (0x01 for BT commands)
+            // trans_state.buf[0] contains HCI command type (0x01 for BT commands)
             
             // For regular BT commands:
             // OCF is the lower 10 bits of the 16-bit opcode (bytes 1-2)
@@ -140,9 +141,9 @@ STATIC mp_obj_t rfcore_transparent(mp_obj_t stream_in, mp_obj_t stream_out, mp_o
             // Get the parameter length and data
             uint8_t param_len = trans_state.buf[3];
             
-            // Create bytearrays for the request and response data
-            mp_obj_t cmd_data = mp_obj_new_bytearray(param_len, &trans_state.buf[4]);
-            mp_obj_t rsp_data = mp_obj_new_bytearray(sizeof(trans_state.buf), trans_state.buf);
+            // Create bytes object for request and bytearray for response
+            mp_obj_t cmd_data = mp_obj_new_bytes(&trans_state.buf[4], param_len);
+            mp_obj_t rsp_data = mp_obj_new_bytearray_by_ref(sizeof(trans_state.buf), trans_state.buf);
             
             // Call the hci_cmd method with the appropriate parameters
             mp_obj_t args[] = {trans_state.ble_instance, 
@@ -152,7 +153,7 @@ STATIC mp_obj_t rfcore_transparent(mp_obj_t stream_in, mp_obj_t stream_out, mp_o
                                rsp_data};
             
             // Call the method and get the status
-            mp_obj_t status_obj = mp_call_method_n_kw(4, 0, args);
+            mp_obj_t status_obj = mp_fun_table.call_method_n_kw(4, 0, args);
             uint8_t status = mp_obj_get_int(status_obj);
             
             // For HCI commands, we need to create a proper HCI response packet
@@ -161,7 +162,7 @@ STATIC mp_obj_t rfcore_transparent(mp_obj_t stream_in, mp_obj_t stream_out, mp_o
                 // But we need to format it as a proper HCI event packet
                 
                 // Make space for the HCI event header
-                memmove(&trans_state.buf[3], trans_state.buf, param_len); // Move response data
+                mp_fun_table.memmove_(&trans_state.buf[3], trans_state.buf, param_len); // Move response data
                 
                 // HCI Event packet format:
                 // Byte 0: HCI Event Type (0x04)

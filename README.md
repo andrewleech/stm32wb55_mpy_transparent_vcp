@@ -207,7 +207,7 @@ You can use the STM32WB55 as a Bluetooth adapter for the MicroPython Unix port:
 
 5. Run the Unix port with the dongle as the Bluetooth HCI device:
    ```bash
-   MICROPYBTUSB=/dev/ttyACM0 micropython/ports/unix/build-standard/micropython
+   MICROPYBTUART=/dev/ttyACM0 micropython/ports/unix/build-standard/micropython
    ```
 
 6. Now you can use Bluetooth from the Unix port:
