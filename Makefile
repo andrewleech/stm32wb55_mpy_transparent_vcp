@@ -48,20 +48,20 @@ build-module: venv mpy-cross
 .PHONY: deploy-module
 deploy-module: build-module
 ifdef DEVICE
-	. ./$(VENV_DIR)/bin/activate && mpremote connect $(DEVICE) cp $(MOD_DIR)/build/rfcore_transparent.mpy :
+	. ./$(VENV_DIR)/bin/activate && mpremote connect $(DEVICE) cp $(MOD_DIR)/rfcore_transparent.mpy :
 else
-	. ./$(VENV_DIR)/bin/activate && mpremote cp $(MOD_DIR)/build/rfcore_transparent.mpy :
+	. ./$(VENV_DIR)/bin/activate && mpremote cp $(MOD_DIR)/rfcore_transparent.mpy :
 endif
 
 # Deploy module + boot.py + main.py to a connected device
 .PHONY: deploy-module-full
 deploy-module-full: build-module
 ifdef DEVICE
-	. ./$(VENV_DIR)/bin/activate && mpremote connect $(DEVICE) resume cp $(MOD_DIR)/build/rfcore_transparent.mpy :
+	. ./$(VENV_DIR)/bin/activate && mpremote connect $(DEVICE) resume cp $(MOD_DIR)/rfcore_transparent.mpy :
 	. ./$(VENV_DIR)/bin/activate && mpremote connect $(DEVICE) resume cp boot.py :
 	. ./$(VENV_DIR)/bin/activate && mpremote connect $(DEVICE) resume cp main.py :
 else
-	. ./$(VENV_DIR)/bin/activate && mpremote resume cp $(MOD_DIR)/build/rfcore_transparent.mpy :
+	. ./$(VENV_DIR)/bin/activate && mpremote resume cp $(MOD_DIR)/rfcore_transparent.mpy :
 	. ./$(VENV_DIR)/bin/activate && mpremote resume cp boot.py :
 	. ./$(VENV_DIR)/bin/activate && mpremote resume cp main.py :
 endif

@@ -3,7 +3,7 @@
 # functionality.
 
 # Location of top-level MicroPython directory
-MPY_DIR ?= ../../..
+MPY_DIR ?= ../micropython
 
 # Name of module
 MOD = rfcore_transparent
