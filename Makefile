@@ -86,17 +86,39 @@ build-firmware-dongle: mpy-cross
 	@cp $(STM32_PORT)/build-$(DONGLE_BOARD)/firmware.* $(FIRMWARE_DIR)/$(DONGLE_BOARD)/
 	@echo "Firmware built successfully: $(FIRMWARE_DIR)/$(DONGLE_BOARD)/"
 
-# Deploy (flash) firmware to the Nucleo board
+# Deploy (flash) firmware to the Nucleo board via DFU
 .PHONY: deploy-firmware-nucleo
 deploy-firmware-nucleo: build-firmware-nucleo
-	@echo "Flashing firmware to STM32WB55 Nucleo board..."
+	@echo "Flashing firmware to STM32WB55 Nucleo board via DFU..."
 	@. ./$(VENV_DIR)/bin/activate && cd $(STM32_PORT) && $(MAKE) BOARD=$(NUCLEO_BOARD) CFLAGS_EXTRA="$(CFLAGS_EXTRA)" deploy
 
-# Deploy (flash) firmware to the USB Dongle
+# Deploy (flash) firmware to the USB Dongle via DFU
 .PHONY: deploy-firmware-dongle
 deploy-firmware-dongle: build-firmware-dongle
-	@echo "Flashing firmware to STM32WB55 USB Dongle..."
+	@echo "Flashing firmware to STM32WB55 USB Dongle via DFU..."
 	@. ./$(VENV_DIR)/bin/activate && cd $(STM32_PORT) && $(MAKE) BOARD=$(DONGLE_BOARD) CFLAGS_EXTRA="$(CFLAGS_EXTRA)" deploy
+
+# Deploy (flash) firmware to the Nucleo board via ST-Link
+# Optional: STLINK_SN=<serial> to select a specific programmer
+.PHONY: deploy-firmware-nucleo-stlink
+deploy-firmware-nucleo-stlink: build-firmware-nucleo
+	@echo "Flashing firmware to STM32WB55 Nucleo board via ST-Link..."
+ifdef STLINK_SN
+	STM32_Programmer_CLI -c port=SWD sn=$(STLINK_SN) -w $(FIRMWARE_DIR)/$(NUCLEO_BOARD)/firmware.hex -v -rst
+else
+	STM32_Programmer_CLI -c port=SWD -w $(FIRMWARE_DIR)/$(NUCLEO_BOARD)/firmware.hex -v -rst
+endif
+
+# Deploy (flash) firmware to the USB Dongle via ST-Link
+# Optional: STLINK_SN=<serial> to select a specific programmer
+.PHONY: deploy-firmware-dongle-stlink
+deploy-firmware-dongle-stlink: build-firmware-dongle
+	@echo "Flashing firmware to STM32WB55 USB Dongle via ST-Link..."
+ifdef STLINK_SN
+	STM32_Programmer_CLI -c port=SWD sn=$(STLINK_SN) -w $(FIRMWARE_DIR)/$(DONGLE_BOARD)/firmware.hex -v -rst
+else
+	STM32_Programmer_CLI -c port=SWD -w $(FIRMWARE_DIR)/$(DONGLE_BOARD)/firmware.hex -v -rst
+endif
 
 # ===== UNIX PORT TARGETS =====
 
@@ -144,10 +166,12 @@ help:
 	@echo "  deploy-module-full   - Deploy module + boot.py + main.py"
 	@echo ""
 	@echo "FIRMWARE TARGETS:"
-	@echo "  build-firmware-nucleo   - Build firmware for STM32WB55 Nucleo board"
-	@echo "  build-firmware-dongle   - Build firmware for STM32WB55 USB Dongle"
-	@echo "  deploy-firmware-nucleo  - Flash firmware to Nucleo board"
-	@echo "  deploy-firmware-dongle  - Flash firmware to USB Dongle"
+	@echo "  build-firmware-nucleo          - Build firmware for STM32WB55 Nucleo board"
+	@echo "  build-firmware-dongle          - Build firmware for STM32WB55 USB Dongle"
+	@echo "  deploy-firmware-nucleo         - Flash firmware to Nucleo board via DFU"
+	@echo "  deploy-firmware-dongle         - Flash firmware to USB Dongle via DFU"
+	@echo "  deploy-firmware-nucleo-stlink  - Flash firmware to Nucleo board via ST-Link"
+	@echo "  deploy-firmware-dongle-stlink  - Flash firmware to USB Dongle via ST-Link"
 	@echo ""
 	@echo "UNIX PORT TARGETS:"
 	@echo "  build-unix           - Build MicroPython Unix port with Bluetooth"
@@ -161,12 +185,13 @@ help:
 	@echo "ENVIRONMENT VARIABLES:"
 	@echo "  DEVICE               - Device identifier for mpremote (e.g., auto-com3)"
 	@echo "  MICROPYBTUART        - Device port for Unix Bluetooth (e.g., /dev/ttyACM0)"
+	@echo "  STLINK_SN            - ST-Link serial number for stlink targets (optional)"
 	@echo ""
 	@echo "EXAMPLES:"
 	@echo "  make build-module"
 	@echo "  make deploy-module DEVICE=auto-com3"
-	@echo "  make build-firmware-dongle"
-	@echo "  make deploy-firmware-dongle"
+	@echo "  make deploy-firmware-nucleo-stlink"
+	@echo "  make deploy-firmware-nucleo-stlink STLINK_SN=066AFF505655806687082951"
 	@echo "  make run-unix MICROPYBTUART=/dev/ttyACM0"
 
 # ===== LEGACY ALIASES (for backward compatibility) =====
@@ -186,10 +211,10 @@ nucleo-firmware: build-firmware-nucleo
 dongle-firmware: build-firmware-dongle
 
 .PHONY: flash-nucleo
-flash-nucleo: deploy-firmware-nucleo
+flash-nucleo: deploy-firmware-nucleo-stlink
 
 .PHONY: flash-dongle
-flash-dongle: deploy-firmware-dongle
+flash-dongle: deploy-firmware-dongle-stlink
 
 .PHONY: unix-port
 unix-port: build-unix
