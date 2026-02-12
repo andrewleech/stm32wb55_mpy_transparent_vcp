@@ -101,17 +101,6 @@ patch-hci-stream:
 		git apply ../$(PATCHES_DIR)/hci_uart_stream.patch; \
 	fi
 
-# Apply unix HCI UART patch to micropython submodule (idempotent)
-.PHONY: patch-unix
-patch-unix:
-	@cd $(MPY_DIR) && \
-	if git apply --check --reverse ../$(PATCHES_DIR)/unix_hci_uart_no_crtscts.patch 2>/dev/null; then \
-		echo "Patch unix_hci_uart_no_crtscts already applied"; \
-	else \
-		echo "Applying unix_hci_uart_no_crtscts patch..."; \
-		git apply ../$(PATCHES_DIR)/unix_hci_uart_no_crtscts.patch; \
-	fi
-
 # ===== FIRMWARE TARGETS =====
 
 # Build firmware for the STM32WB55 Nucleo board
@@ -154,7 +143,7 @@ deploy-firmware-nucleo-stlink: build-firmware-nucleo
 
 # Build the Unix port with Bluetooth support (ROM_LEVEL_EVERYTHING + aioble)
 .PHONY: build-unix
-build-unix: mpy-cross patch-unix
+build-unix: mpy-cross
 	@echo "Building MicroPython Unix port..."
 	@cd $(MPY_DIR) && $(MAKE) -C ports/unix VARIANT_DIR=$(UNIX_VARIANT_DIR) MICROPY_PY_BLUETOOTH=1 MICROPY_BLUETOOTH_NIMBLE=1 submodules
 	@cd $(MPY_DIR) && $(MAKE) -C ports/unix VARIANT_DIR=$(UNIX_VARIANT_DIR) MICROPY_PY_BLUETOOTH=1 MICROPY_BLUETOOTH_NIMBLE=1 all
@@ -165,7 +154,7 @@ build-unix: mpy-cross patch-unix
 run-unix: build-unix
 ifndef MICROPYBTUART
 	@echo "ERROR: Please set MICROPYBTUART environment variable to your device port"
-	@echo "Example: make run-unix MICROPYBTUART=/dev/ttyACM0"
+	@echo "Example: make run-unix MICROPYBTUART=/dev/ttyACM1"
 	@exit 1
 else
 	@echo "Running MicroPython Unix port with Bluetooth adapter at $(MICROPYBTUART)..."
@@ -213,12 +202,12 @@ help:
 	@echo ""
 	@echo "ENVIRONMENT VARIABLES:"
 	@echo "  DEVICE               - Device identifier for mpremote (e.g., auto-com3)"
-	@echo "  MICROPYBTUART        - Device port for Unix Bluetooth (e.g., /dev/ttyACM0)"
+	@echo "  MICROPYBTUART        - Device port for Unix Bluetooth (e.g., /dev/ttyACM1)"
 	@echo ""
 	@echo "EXAMPLES:"
 	@echo "  make build-module"
 	@echo "  make deploy-module DEVICE=auto-com3"
 	@echo "  make deploy-firmware-nucleo"
 	@echo "  make deploy-firmware-nucleo-stlink"
-	@echo "  make run-unix MICROPYBTUART=/dev/ttyACM0"
+	@echo "  make run-unix MICROPYBTUART=/dev/ttyACM1"
 

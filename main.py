@@ -5,6 +5,7 @@ import rfcore_transparent
 async def main():
     hci_vcp = pyb.USB_VCP(1)
     hci_vcp.setinterrupt(-1)
+    hci_vcp.init(flow=pyb.USB_VCP.RTS)
     while True:
         try:
             print("Starting BLE HCI transparent mode on USB VCP(1)...")
