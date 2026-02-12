@@ -21,9 +21,17 @@ CFLAGS_EXTRA = -DMICROPY_PY_BLUETOOTH_ENABLE_HCI_CMD -DMICROPY_HW_USB_CDC_NUM=2 
 .PHONY: all
 all: build-module
 
+# Ensure the micropython submodule is checked out
+.PHONY: submodules
+submodules:
+	@if [ ! -f "$(MPY_DIR)/py/mpconfig.h" ]; then \
+		echo "Initialising micropython submodule..."; \
+		git submodule update --init $(MPY_DIR); \
+	fi
+
 # Build mpy-cross first, required for native module compilation
 .PHONY: mpy-cross
-mpy-cross:
+mpy-cross: submodules
 	$(MAKE) -C $(MPY_DIR)/mpy-cross
 
 # Create virtual environment if it doesn't exist
