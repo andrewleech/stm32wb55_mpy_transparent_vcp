@@ -110,7 +110,7 @@ patch-unix:
 build-firmware-nucleo: mpy-cross patch-firmware patch-hci-stream
 	@echo "Building MicroPython firmware for STM32WB55 Nucleo board..."
 	@mkdir -p $(FIRMWARE_DIR)/$(NUCLEO_BOARD)
-	@. ./$(VENV_DIR)/bin/activate && cd $(STM32_PORT) && $(MAKE) BOARD=$(NUCLEO_BOARD) CFLAGS_EXTRA="$(CFLAGS_EXTRA)" submodules all
+	@cd $(STM32_PORT) && $(MAKE) BOARD=$(NUCLEO_BOARD) CFLAGS_EXTRA="$(CFLAGS_EXTRA)" submodules all
 	@cp $(STM32_PORT)/build-$(NUCLEO_BOARD)/firmware.* $(FIRMWARE_DIR)/$(NUCLEO_BOARD)/
 	@echo "Firmware built successfully: $(FIRMWARE_DIR)/$(NUCLEO_BOARD)/"
 
@@ -119,7 +119,7 @@ build-firmware-nucleo: mpy-cross patch-firmware patch-hci-stream
 build-firmware-dongle: mpy-cross patch-firmware patch-hci-stream
 	@echo "Building MicroPython firmware for STM32WB55 USB Dongle..."
 	@mkdir -p $(FIRMWARE_DIR)/$(DONGLE_BOARD)
-	@. ./$(VENV_DIR)/bin/activate && cd $(STM32_PORT) && $(MAKE) BOARD=$(DONGLE_BOARD) CFLAGS_EXTRA="$(CFLAGS_EXTRA)" submodules all
+	@cd $(STM32_PORT) && $(MAKE) BOARD=$(DONGLE_BOARD) CFLAGS_EXTRA="$(CFLAGS_EXTRA)" submodules all
 	@cp $(STM32_PORT)/build-$(DONGLE_BOARD)/firmware.* $(FIRMWARE_DIR)/$(DONGLE_BOARD)/
 	@echo "Firmware built successfully: $(FIRMWARE_DIR)/$(DONGLE_BOARD)/"
 
@@ -127,13 +127,13 @@ build-firmware-dongle: mpy-cross patch-firmware patch-hci-stream
 .PHONY: deploy-firmware-nucleo
 deploy-firmware-nucleo: build-firmware-nucleo
 	@echo "Flashing firmware to STM32WB55 Nucleo board via DFU..."
-	@. ./$(VENV_DIR)/bin/activate && cd $(STM32_PORT) && $(MAKE) BOARD=$(NUCLEO_BOARD) CFLAGS_EXTRA="$(CFLAGS_EXTRA)" deploy
+	@cd $(STM32_PORT) && $(MAKE) BOARD=$(NUCLEO_BOARD) CFLAGS_EXTRA="$(CFLAGS_EXTRA)" deploy
 
 # Deploy (flash) firmware to the USB Dongle via DFU
 .PHONY: deploy-firmware-dongle
 deploy-firmware-dongle: build-firmware-dongle
 	@echo "Flashing firmware to STM32WB55 USB Dongle via DFU..."
-	@. ./$(VENV_DIR)/bin/activate && cd $(STM32_PORT) && $(MAKE) BOARD=$(DONGLE_BOARD) CFLAGS_EXTRA="$(CFLAGS_EXTRA)" deploy
+	@cd $(STM32_PORT) && $(MAKE) BOARD=$(DONGLE_BOARD) CFLAGS_EXTRA="$(CFLAGS_EXTRA)" deploy
 
 # Deploy (flash) firmware to the Nucleo board via ST-Link
 # Optional: STLINK_SN=<serial> to select a specific programmer
@@ -163,8 +163,8 @@ endif
 .PHONY: build-unix
 build-unix: mpy-cross patch-unix
 	@echo "Building MicroPython Unix port..."
-	@. ./$(VENV_DIR)/bin/activate && cd $(MPY_DIR) && $(MAKE) -C ports/unix MICROPY_PY_BLUETOOTH=1 MICROPY_BLUETOOTH_NIMBLE=1 submodules
-	@. ./$(VENV_DIR)/bin/activate && cd $(MPY_DIR) && $(MAKE) -C ports/unix MICROPY_PY_BLUETOOTH=1 MICROPY_BLUETOOTH_NIMBLE=1 all
+	@cd $(MPY_DIR) && $(MAKE) -C ports/unix MICROPY_PY_BLUETOOTH=1 MICROPY_BLUETOOTH_NIMBLE=1 submodules
+	@cd $(MPY_DIR) && $(MAKE) -C ports/unix MICROPY_PY_BLUETOOTH=1 MICROPY_BLUETOOTH_NIMBLE=1 all
 	@echo "Unix port built successfully. Binary location: $(MPY_DIR)/ports/unix/build-standard/micropython"
 
 # Run the Unix port with the STM32WB55 as Bluetooth adapter
@@ -187,9 +187,9 @@ clean:
 	@echo "Cleaning build artifacts..."
 	$(MAKE) -C $(MOD_DIR) clean MPY_DIR=../$(MPY_DIR)
 	$(MAKE) -C $(MPY_DIR)/mpy-cross clean
-	@. ./$(VENV_DIR)/bin/activate && cd $(STM32_PORT) && $(MAKE) BOARD=$(NUCLEO_BOARD) clean
-	@. ./$(VENV_DIR)/bin/activate && cd $(STM32_PORT) && $(MAKE) BOARD=$(DONGLE_BOARD) clean
-	@. ./$(VENV_DIR)/bin/activate && cd $(MPY_DIR) && $(MAKE) -C ports/unix clean
+	@cd $(STM32_PORT) && $(MAKE) BOARD=$(NUCLEO_BOARD) clean
+	@cd $(STM32_PORT) && $(MAKE) BOARD=$(DONGLE_BOARD) clean
+	@cd $(MPY_DIR) && $(MAKE) -C ports/unix clean
 	@echo "All build artifacts cleaned"
 
 # Help text
