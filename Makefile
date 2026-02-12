@@ -9,6 +9,7 @@ MOD_DIR = src
 FIRMWARE_DIR = firmware
 STM32_PORT = $(MPY_DIR)/ports/stm32
 VENV_DIR = .venv
+UNIX_VARIANT_DIR = $(CURDIR)/unix-variant
 
 # Board definitions
 NUCLEO_BOARD = NUCLEO_WB55
@@ -133,47 +134,31 @@ build-firmware-dongle: mpy-cross patch-firmware patch-hci-stream
 
 # Deploy (flash) firmware to the Nucleo board via DFU
 .PHONY: deploy-firmware-nucleo
-deploy-firmware-nucleo: build-firmware-nucleo
+deploy-firmware-nucleo: build-firmware-nucleo venv
 	@echo "Flashing firmware to STM32WB55 Nucleo board via DFU..."
-	@cd $(STM32_PORT) && $(MAKE) BOARD=$(NUCLEO_BOARD) CFLAGS_EXTRA="$(CFLAGS_EXTRA)" deploy
+	@. ./$(VENV_DIR)/bin/activate && cd $(STM32_PORT) && $(MAKE) BOARD=$(NUCLEO_BOARD) CFLAGS_EXTRA="$(CFLAGS_EXTRA)" deploy
 
 # Deploy (flash) firmware to the USB Dongle via DFU
 .PHONY: deploy-firmware-dongle
-deploy-firmware-dongle: build-firmware-dongle
+deploy-firmware-dongle: build-firmware-dongle venv
 	@echo "Flashing firmware to STM32WB55 USB Dongle via DFU..."
-	@cd $(STM32_PORT) && $(MAKE) BOARD=$(DONGLE_BOARD) CFLAGS_EXTRA="$(CFLAGS_EXTRA)" deploy
+	@. ./$(VENV_DIR)/bin/activate && cd $(STM32_PORT) && $(MAKE) BOARD=$(DONGLE_BOARD) CFLAGS_EXTRA="$(CFLAGS_EXTRA)" deploy
 
-# Deploy (flash) firmware to the Nucleo board via ST-Link
-# Optional: STLINK_SN=<serial> to select a specific programmer
+# Deploy (flash) firmware to the Nucleo board via ST-Link (delegates to upstream deploy-stlink)
 .PHONY: deploy-firmware-nucleo-stlink
 deploy-firmware-nucleo-stlink: build-firmware-nucleo
 	@echo "Flashing firmware to STM32WB55 Nucleo board via ST-Link..."
-ifdef STLINK_SN
-	STM32_Programmer_CLI -c port=SWD sn=$(STLINK_SN) -w $(FIRMWARE_DIR)/$(NUCLEO_BOARD)/firmware.hex -v -rst
-else
-	STM32_Programmer_CLI -c port=SWD -w $(FIRMWARE_DIR)/$(NUCLEO_BOARD)/firmware.hex -v -rst
-endif
-
-# Deploy (flash) firmware to the USB Dongle via ST-Link
-# Optional: STLINK_SN=<serial> to select a specific programmer
-.PHONY: deploy-firmware-dongle-stlink
-deploy-firmware-dongle-stlink: build-firmware-dongle
-	@echo "Flashing firmware to STM32WB55 USB Dongle via ST-Link..."
-ifdef STLINK_SN
-	STM32_Programmer_CLI -c port=SWD sn=$(STLINK_SN) -w $(FIRMWARE_DIR)/$(DONGLE_BOARD)/firmware.hex -v -rst
-else
-	STM32_Programmer_CLI -c port=SWD -w $(FIRMWARE_DIR)/$(DONGLE_BOARD)/firmware.hex -v -rst
-endif
+	@cd $(STM32_PORT) && $(MAKE) BOARD=$(NUCLEO_BOARD) CFLAGS_EXTRA="$(CFLAGS_EXTRA)" deploy-stlink
 
 # ===== UNIX PORT TARGETS =====
 
-# Build the Unix port with Bluetooth support
+# Build the Unix port with Bluetooth support (ROM_LEVEL_EVERYTHING + aioble)
 .PHONY: build-unix
 build-unix: mpy-cross patch-unix
 	@echo "Building MicroPython Unix port..."
-	@cd $(MPY_DIR) && $(MAKE) -C ports/unix MICROPY_PY_BLUETOOTH=1 MICROPY_BLUETOOTH_NIMBLE=1 submodules
-	@cd $(MPY_DIR) && $(MAKE) -C ports/unix MICROPY_PY_BLUETOOTH=1 MICROPY_BLUETOOTH_NIMBLE=1 all
-	@echo "Unix port built successfully. Binary location: $(MPY_DIR)/ports/unix/build-standard/micropython"
+	@cd $(MPY_DIR) && $(MAKE) -C ports/unix VARIANT_DIR=$(UNIX_VARIANT_DIR) MICROPY_PY_BLUETOOTH=1 MICROPY_BLUETOOTH_NIMBLE=1 submodules
+	@cd $(MPY_DIR) && $(MAKE) -C ports/unix VARIANT_DIR=$(UNIX_VARIANT_DIR) MICROPY_PY_BLUETOOTH=1 MICROPY_BLUETOOTH_NIMBLE=1 all
+	@echo "Unix port built successfully. Binary location: $(MPY_DIR)/ports/unix/build-unix-variant/micropython"
 
 # Run the Unix port with the STM32WB55 as Bluetooth adapter
 .PHONY: run-unix
@@ -184,7 +169,7 @@ ifndef MICROPYBTUART
 	@exit 1
 else
 	@echo "Running MicroPython Unix port with Bluetooth adapter at $(MICROPYBTUART)..."
-	MICROPYBTUART=$(MICROPYBTUART) $(MPY_DIR)/ports/unix/build-standard/micropython
+	MICROPYBTUART=$(MICROPYBTUART) $(MPY_DIR)/ports/unix/build-unix-variant/micropython
 endif
 
 # ===== UTILITY TARGETS =====
@@ -197,7 +182,7 @@ clean:
 	$(MAKE) -C $(MPY_DIR)/mpy-cross clean
 	@cd $(STM32_PORT) && $(MAKE) BOARD=$(NUCLEO_BOARD) clean
 	@cd $(STM32_PORT) && $(MAKE) BOARD=$(DONGLE_BOARD) clean
-	@cd $(MPY_DIR) && $(MAKE) -C ports/unix clean
+	@cd $(MPY_DIR) && $(MAKE) -C ports/unix VARIANT_DIR=$(UNIX_VARIANT_DIR) clean
 	@echo "All build artifacts cleaned"
 
 # Help text
@@ -216,10 +201,9 @@ help:
 	@echo "  deploy-firmware-nucleo         - Flash firmware to Nucleo board via DFU"
 	@echo "  deploy-firmware-dongle         - Flash firmware to USB Dongle via DFU"
 	@echo "  deploy-firmware-nucleo-stlink  - Flash firmware to Nucleo board via ST-Link"
-	@echo "  deploy-firmware-dongle-stlink  - Flash firmware to USB Dongle via ST-Link"
 	@echo ""
 	@echo "UNIX PORT TARGETS:"
-	@echo "  build-unix           - Build MicroPython Unix port with Bluetooth"
+	@echo "  build-unix           - Build MicroPython Unix port with BLE + aioble"
 	@echo "  run-unix             - Run Unix port with STM32WB55 as BT adapter"
 	@echo ""
 	@echo "UTILITY TARGETS:"
@@ -230,36 +214,11 @@ help:
 	@echo "ENVIRONMENT VARIABLES:"
 	@echo "  DEVICE               - Device identifier for mpremote (e.g., auto-com3)"
 	@echo "  MICROPYBTUART        - Device port for Unix Bluetooth (e.g., /dev/ttyACM0)"
-	@echo "  STLINK_SN            - ST-Link serial number for stlink targets (optional)"
 	@echo ""
 	@echo "EXAMPLES:"
 	@echo "  make build-module"
 	@echo "  make deploy-module DEVICE=auto-com3"
+	@echo "  make deploy-firmware-nucleo"
 	@echo "  make deploy-firmware-nucleo-stlink"
-	@echo "  make deploy-firmware-nucleo-stlink STLINK_SN=066AFF505655806687082951"
 	@echo "  make run-unix MICROPYBTUART=/dev/ttyACM0"
 
-# ===== LEGACY ALIASES (for backward compatibility) =====
-.PHONY: build
-build: build-module
-
-.PHONY: deploy
-deploy: deploy-module
-
-.PHONY: deploy-all
-deploy-all: deploy-module-full
-
-.PHONY: nucleo-firmware
-nucleo-firmware: build-firmware-nucleo
-
-.PHONY: dongle-firmware
-dongle-firmware: build-firmware-dongle
-
-.PHONY: flash-nucleo
-flash-nucleo: deploy-firmware-nucleo-stlink
-
-.PHONY: flash-dongle
-flash-dongle: deploy-firmware-dongle-stlink
-
-.PHONY: unix-port
-unix-port: build-unix
