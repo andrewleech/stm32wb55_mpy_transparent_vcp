@@ -1,39 +1,5 @@
-diff --git a/docs/library/stm.rst b/docs/library/stm.rst
-index 970ab1883..94ac3b554 100644
---- a/docs/library/stm.rst
-+++ b/docs/library/stm.rst
-@@ -103,6 +103,17 @@ the second CPU, the RF core.
- 
-     Returns a bytes object with the result of the SYS command.
- 
-+.. function:: rfcore_ble_hci(command[, response_buf])
-+
-+    Execute a HCI command on the BLE channel. The execution is synchronous.
-+
-+    Takes a *command* byte/bytearray with pre-formatted HCI packet.
-+
-+    Optionally takes a pre-allocated bytearray buffer for the response packet.
-+
-+    Returns response length if *response_buf* is provided, else a bytes object with the
-+    response HCI packet.
-+
- Functions specific to STM32WLxx MCUs
- ------------------------------------
- 
-diff --git a/ports/stm32/modstm.c b/ports/stm32/modstm.c
-index 4f26dce79..184380bbc 100644
---- a/ports/stm32/modstm.c
-+++ b/ports/stm32/modstm.c
-@@ -53,6 +53,7 @@ static const mp_rom_map_elem_t stm_module_globals_table[] = {
-     { MP_ROM_QSTR(MP_QSTR_rfcore_status), MP_ROM_PTR(&rfcore_status_obj) },
-     { MP_ROM_QSTR(MP_QSTR_rfcore_fw_version), MP_ROM_PTR(&rfcore_fw_version_obj) },
-     { MP_ROM_QSTR(MP_QSTR_rfcore_sys_hci), MP_ROM_PTR(&rfcore_sys_hci_obj) },
-+    { MP_ROM_QSTR(MP_QSTR_rfcore_ble_hci), MP_ROM_PTR(&rfcore_ble_hci_obj) },
-     #endif
- 
-     #if defined(STM32WL)
 diff --git a/ports/stm32/rfcore.c b/ports/stm32/rfcore.c
-index 2d99a3410..df4090b57 100644
+index 2d99a3410..76af65210 100644
 --- a/ports/stm32/rfcore.c
 +++ b/ports/stm32/rfcore.c
 @@ -503,7 +503,7 @@ static ssize_t tl_sys_hci_cmd_resp(uint16_t opcode, const uint8_t *buf, size_t l
@@ -83,55 +49,10 @@ index 2d99a3410..df4090b57 100644
          }
  
          // Prevent sending another command until this one returns with HCI_EVENT_COMMAND_{COMPLETE,STATUS}.
-@@ -797,4 +803,65 @@ static mp_obj_t rfcore_sys_hci(size_t n_args, const mp_obj_t *args) {
+@@ -797,4 +803,20 @@ static mp_obj_t rfcore_sys_hci(size_t n_args, const mp_obj_t *args) {
  }
  MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(rfcore_sys_hci_obj, 3, 4, rfcore_sys_hci);
  
-+static void rfcore_ble_hci_response_to_buffer(void *env, const uint8_t *buf, size_t len) {
-+    DEBUG_printf("rfcore_ble_hci_response_to_buffer len 0x%x\n", len);
-+    mp_obj_t *rsp = (mp_obj_t *)env;
-+    if (*rsp == mp_const_none) {
-+        *rsp = mp_obj_new_bytes(buf, len);
-+    } else {
-+        mp_buffer_info_t bufinfo;
-+        mp_get_buffer_raise(*rsp, &bufinfo, MP_BUFFER_WRITE);
-+        if (bufinfo.len < len) {
-+            mp_raise_OSError(-len);
-+        }
-+        memcpy(bufinfo.buf, buf, len);
-+    }
-+}
-+
-+static mp_obj_t rfcore_ble_hci(size_t n_args, const mp_obj_t *args) {
-+    if (ipcc_mem_dev_info_tab.fus.table_state == MAGIC_IPCC_MEM_INCORRECT) {
-+        mp_raise_OSError(MP_EINVAL);
-+    }
-+    mp_obj_t cmd = args[0];
-+    mp_obj_t rsp = mp_const_none;
-+    bool return_len = false;
-+    if (n_args == 2) {
-+        rsp = args[1];
-+        // response buffer passed in, so return rsp length.
-+        return_len = true;
-+    }
-+
-+    mp_buffer_info_t bufinfo = {0};
-+    mp_get_buffer_raise(cmd, &bufinfo, MP_BUFFER_READ);
-+
-+    // Poll for completion rather than wait for IRQ->scheduler. Is re-enabled in tl_check_msg.
-+    LL_C1_IPCC_DisableReceiveChannel(IPCC, IPCC_CH_BLE);
-+
-+    rfcore_ble_hci_cmd(bufinfo.len, bufinfo.buf);
-+
-+    parse_hci_info_t parse = { rfcore_ble_hci_response_to_buffer, &rsp, false };
-+    size_t ret_len = tl_ble_wait_resp(&parse);
-+    if (return_len) {
-+        return MP_OBJ_NEW_SMALL_INT(ret_len);
-+    }
-+    return rsp;
-+}
-+MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(rfcore_ble_hci_obj, 1, 2, rfcore_ble_hci);
-+
 +size_t rfcore_ble_drain_msg(rfcore_ble_msg_callback_t cb, void *env) {
 +    parse_hci_info_t parse = { cb, env, false };
 +    // Like rfcore_ble_check_msg but skips BD address auto-configuration.
@@ -150,7 +71,7 @@ index 2d99a3410..df4090b57 100644
 +
  #endif // defined(STM32WB)
 diff --git a/ports/stm32/rfcore.h b/ports/stm32/rfcore.h
-index 39267b325..fbb329cb3 100644
+index 39267b325..068ac772e 100644
 --- a/ports/stm32/rfcore.h
 +++ b/ports/stm32/rfcore.h
 @@ -36,6 +36,9 @@ void rfcore_ble_init(void);
@@ -163,10 +84,3 @@ index 39267b325..fbb329cb3 100644
  void rfcore_ble_set_txpower(uint8_t level);
  
  void rfcore_start_flash_erase(void);
-@@ -44,5 +47,6 @@ void rfcore_end_flash_erase(void);
- MP_DECLARE_CONST_FUN_OBJ_0(rfcore_status_obj);
- MP_DECLARE_CONST_FUN_OBJ_1(rfcore_fw_version_obj);
- MP_DECLARE_CONST_FUN_OBJ_VAR_BETWEEN(rfcore_sys_hci_obj);
-+MP_DECLARE_CONST_FUN_OBJ_VAR_BETWEEN(rfcore_ble_hci_obj);
- 
- #endif // MICROPY_INCLUDED_STM32_RFCORE_H
