@@ -443,7 +443,7 @@ STATIC void LHCI_C1_Read_Device_Information(TL_CmdPacket_t *pcmd) {
     return;
 }
 
-size_t local_hci_cmd(size_t len, const uint8_t *buffer) {
+size_t local_hci_cmd(size_t len, uint8_t *buffer) {
 
     TL_CmdPacket_t *SysLocalCmd = (TL_CmdPacket_t *)buffer;
     TL_EvtSerial_t *SysLocalRsp = (TL_EvtSerial_t *)buffer;

@@ -1,128 +1,65 @@
-# This will be built into the native mpy module.
-# Functions here will be available in the rfcore_transparent module along with
-# the native C functions.
-import sys
-import time
-import micropython
-from bluetooth import BLE
+import asyncio
 
 
-def init_bluetooth():
-    """Initialize the Bluetooth controller"""
-    # Ensure rfcore has been started at least once, then turn off bluetooth.
-    BLE().active(1)
-    BLE().active(0)
+async def _relay(reader, writer):
+    while True:
+        data = await reader.read(256)
+        if not data:
+            break
+        writer.write(data)
+        await writer.drain()
 
 
-def start(stream=None, callback=None):
-    """
-    Start the transparent mode HCI bridge in a continuous loop.
-    This function will not return until interrupted.
-    
-    Args:
-        stream: The stream to use for I/O. If None, uses stdin/stdout.
-        callback: Optional callback function for activity indication.
-    """
-    import sys
-    import micropython
-    
-    # Initialize Bluetooth controller
-    init_bluetooth()
+async def _relay_host_to_hci(sr_host, sw_hci, sw_host):
+    LOCAL_CMD = const(0x20)
+    BT_CMD = const(0x01)
+    BT_ACL = const(0x02)
+    while True:
+        type_byte = await sr_host.readexactly(1)
+        ptype = type_byte[0]
+        if ptype == BT_CMD or ptype == LOCAL_CMD:
+            hdr = await sr_host.readexactly(3)
+            plen = hdr[2]
+            payload = await sr_host.readexactly(plen) if plen else b''
+            pkt = type_byte + hdr + payload
+            if ptype == LOCAL_CMD:
+                rsp = _local_hci_cmd(pkt)
+                sw_host.write(rsp)
+                await sw_host.drain()
+            else:
+                sw_hci.write(pkt)
+                await sw_hci.drain()
+        elif ptype == BT_ACL:
+            hdr = await sr_host.readexactly(4)
+            plen = hdr[2] | (hdr[3] << 8)
+            payload = await sr_host.readexactly(plen) if plen else b''
+            sw_hci.write(type_byte + hdr + payload)
+            await sw_hci.drain()
+        else:
+            raise ValueError("unknown HCI packet type: 0x%02x" % ptype)
 
-    in_stream = out_stream = stream
 
-    if not in_stream:
-        # Disable the ctrl-c interrupt when using repl stream.
-        micropython.kbd_intr(-1)
+async def start_async(host_stream):
+    import bluetooth
 
-        in_stream = sys.stdin
-        out_stream = sys.stdout
-
-    # Start in continuous polling loop
+    hci = bluetooth.hci_io()
+    sr_host = asyncio.StreamReader(host_stream)
+    sw_host = asyncio.StreamWriter(host_stream, {})
+    sr_hci = asyncio.StreamReader(hci)
+    sw_hci = asyncio.StreamWriter(hci, {})
+    t1 = asyncio.create_task(_relay_host_to_hci(sr_host, sw_hci, sw_host))
+    t2 = asyncio.create_task(_relay(sr_hci, sw_host))
     try:
-        while True:
-            _rfcore_transparent_start(in_stream, out_stream, callback)
-            # Small sleep to prevent tight loop if no data
-            time.sleep_ms(1)
-    except KeyboardInterrupt:
-        # Re-enable keyboard interrupt if using REPL
-        if not stream:
-            micropython.kbd_intr(3)
-        raise
-
-
-async def start_async(stream=None, callback=None):
-    """
-    Async version of the transparent mode HCI bridge.
-    
-    Args:
-        stream: The stream to use for I/O. If None, uses stdin/stdout.
-        callback: Optional callback function for activity indication.
-    
-    Example:
-        import asyncio
-        import rfcore_transparent
-        
-        async def main():
-            await rfcore_transparent.start_async()
-            
-        asyncio.run(main())
-    """
-    import asyncio
-    
-    # Initialize Bluetooth controller
-    init_bluetooth()
-
-    in_stream = out_stream = stream
-
-    if not in_stream:
-        # Disable the ctrl-c interrupt when using repl stream.
-        micropython.kbd_intr(-1)
-
-        in_stream = sys.stdin
-        out_stream = sys.stdout
-
-    try:
-        while True:
-            # Process one step
-            _rfcore_transparent_start(in_stream, out_stream, callback)
-            # Yield to other tasks
-            await asyncio.sleep(0)
-    except KeyboardInterrupt:
-        # Re-enable keyboard interrupt if using REPL
-        if not stream:
-            micropython.kbd_intr(3)
-        raise
-
-
-def process_once(stream=None, callback=None):
-    """
-    Process a single iteration of the transparent mode HCI bridge.
-    Returns True if data was processed, False otherwise.
-    
-    Args:
-        stream: The stream to use for I/O. If None, uses stdin/stdout.
-        callback: Optional callback function for activity indication.
-        
-    Returns:
-        bool: True if data was processed, False otherwise.
-    
-    Example:
-        import rfcore_transparent
-        
-        # Initialize HCI bridge
-        rfcore_transparent.init_bluetooth()
-        
-        # Process in custom loop
-        while True:
-            if rfcore_transparent.process_once():
-                print("Data processed")
-            # Do other work here
-    """
-    in_stream = out_stream = stream
-
-    if not in_stream:
-        in_stream = sys.stdin
-        out_stream = sys.stdout
-
-    return _rfcore_transparent_start(in_stream, out_stream, callback)
+        await asyncio.gather(t1, t2)
+    finally:
+        t1.cancel()
+        t2.cancel()
+        try:
+            await t1
+        except (asyncio.CancelledError, Exception):
+            pass
+        try:
+            await t2
+        except (asyncio.CancelledError, Exception):
+            pass
+        hci.close()

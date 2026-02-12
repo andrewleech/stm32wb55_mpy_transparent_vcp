@@ -66,11 +66,48 @@ else
 	. ./$(VENV_DIR)/bin/activate && mpremote resume cp main.py :
 endif
 
+# ===== PATCH TARGETS =====
+
+PATCHES_DIR = patches
+
+# Apply rfcore_ble_hci patch to micropython submodule (idempotent)
+.PHONY: patch-firmware
+patch-firmware:
+	@cd $(MPY_DIR) && \
+	if git apply --check --reverse ../$(PATCHES_DIR)/rfcore_ble_hci.patch 2>/dev/null; then \
+		echo "Patch rfcore_ble_hci already applied"; \
+	else \
+		echo "Applying rfcore_ble_hci patch..."; \
+		git apply ../$(PATCHES_DIR)/rfcore_ble_hci.patch; \
+	fi
+
+# Apply HCI stream patch to micropython submodule (idempotent)
+.PHONY: patch-hci-stream
+patch-hci-stream:
+	@cd $(MPY_DIR) && \
+	if git apply --check --reverse ../$(PATCHES_DIR)/hci_uart_stream.patch 2>/dev/null; then \
+		echo "Patch hci_uart_stream already applied"; \
+	else \
+		echo "Applying hci_uart_stream patch..."; \
+		git apply ../$(PATCHES_DIR)/hci_uart_stream.patch; \
+	fi
+
+# Apply unix HCI UART patch to micropython submodule (idempotent)
+.PHONY: patch-unix
+patch-unix:
+	@cd $(MPY_DIR) && \
+	if git apply --check --reverse ../$(PATCHES_DIR)/unix_hci_uart_no_crtscts.patch 2>/dev/null; then \
+		echo "Patch unix_hci_uart_no_crtscts already applied"; \
+	else \
+		echo "Applying unix_hci_uart_no_crtscts patch..."; \
+		git apply ../$(PATCHES_DIR)/unix_hci_uart_no_crtscts.patch; \
+	fi
+
 # ===== FIRMWARE TARGETS =====
 
 # Build firmware for the STM32WB55 Nucleo board
 .PHONY: build-firmware-nucleo
-build-firmware-nucleo: mpy-cross
+build-firmware-nucleo: mpy-cross patch-firmware patch-hci-stream
 	@echo "Building MicroPython firmware for STM32WB55 Nucleo board..."
 	@mkdir -p $(FIRMWARE_DIR)/$(NUCLEO_BOARD)
 	@. ./$(VENV_DIR)/bin/activate && cd $(STM32_PORT) && $(MAKE) BOARD=$(NUCLEO_BOARD) CFLAGS_EXTRA="$(CFLAGS_EXTRA)" submodules all
@@ -79,7 +116,7 @@ build-firmware-nucleo: mpy-cross
 
 # Build firmware for the STM32WB55 USB Dongle
 .PHONY: build-firmware-dongle
-build-firmware-dongle: mpy-cross
+build-firmware-dongle: mpy-cross patch-firmware patch-hci-stream
 	@echo "Building MicroPython firmware for STM32WB55 USB Dongle..."
 	@mkdir -p $(FIRMWARE_DIR)/$(DONGLE_BOARD)
 	@. ./$(VENV_DIR)/bin/activate && cd $(STM32_PORT) && $(MAKE) BOARD=$(DONGLE_BOARD) CFLAGS_EXTRA="$(CFLAGS_EXTRA)" submodules all
@@ -124,7 +161,7 @@ endif
 
 # Build the Unix port with Bluetooth support
 .PHONY: build-unix
-build-unix: mpy-cross
+build-unix: mpy-cross patch-unix
 	@echo "Building MicroPython Unix port..."
 	@. ./$(VENV_DIR)/bin/activate && cd $(MPY_DIR) && $(MAKE) -C ports/unix MICROPY_PY_BLUETOOTH=1 MICROPY_BLUETOOTH_NIMBLE=1 submodules
 	@. ./$(VENV_DIR)/bin/activate && cd $(MPY_DIR) && $(MAKE) -C ports/unix MICROPY_PY_BLUETOOTH=1 MICROPY_BLUETOOTH_NIMBLE=1 all

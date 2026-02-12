@@ -1,0 +1,367 @@
+diff --git a/extmod/modbluetooth.c b/extmod/modbluetooth.c
+index ffa407809..7488d0663 100644
+--- a/extmod/modbluetooth.c
++++ b/extmod/modbluetooth.c
+@@ -984,11 +984,23 @@ static MP_DEFINE_CONST_OBJ_TYPE(
+     locals_dict, &bluetooth_ble_locals_dict
+     );
+ 
++#if MICROPY_PY_BLUETOOTH_ENABLE_HCI_CMD && defined(STM32WB)
++#include "mpbthciport.h"
++static mp_obj_t bluetooth_hci_io(void) {
++    return MP_OBJ_TYPE_GET_SLOT(&mp_bluetooth_hci_stream_type, make_new)(&mp_bluetooth_hci_stream_type, 0, 0, NULL);
++}
++static MP_DEFINE_CONST_FUN_OBJ_0(bluetooth_hci_io_obj, bluetooth_hci_io);
++#endif
++
+ static const mp_rom_map_elem_t mp_module_bluetooth_globals_table[] = {
+     { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR_bluetooth) },
+     { MP_ROM_QSTR(MP_QSTR_BLE), MP_ROM_PTR(&mp_type_bluetooth_ble) },
+     { MP_ROM_QSTR(MP_QSTR_UUID), MP_ROM_PTR(&mp_type_bluetooth_uuid) },
+ 
++    #if MICROPY_PY_BLUETOOTH_ENABLE_HCI_CMD && defined(STM32WB)
++    { MP_ROM_QSTR(MP_QSTR_hci_io), MP_ROM_PTR(&bluetooth_hci_io_obj) },
++    #endif
++
+     // TODO: Deprecate these flags (recommend copying the constants from modbluetooth.h instead).
+     { MP_ROM_QSTR(MP_QSTR_FLAG_READ), MP_ROM_INT(MP_BLUETOOTH_CHARACTERISTIC_FLAG_READ) },
+     { MP_ROM_QSTR(MP_QSTR_FLAG_WRITE), MP_ROM_INT(MP_BLUETOOTH_CHARACTERISTIC_FLAG_WRITE) },
+diff --git a/ports/stm32/mpbthciport.c b/ports/stm32/mpbthciport.c
+index d8be24765..603541998 100644
+--- a/ports/stm32/mpbthciport.c
++++ b/ports/stm32/mpbthciport.c
+@@ -26,7 +26,9 @@
+ 
+ #include <stdio.h>
+ #include "py/runtime.h"
++#include "py/stream.h"
+ #include "py/mphal.h"
++#include "py/mperrno.h"
+ #include "extmod/mpbthci.h"
+ #include "extmod/modbluetooth.h"
+ #include "shared/runtime/softtimer.h"
+@@ -65,6 +67,15 @@ void mp_bluetooth_hci_poll_in_ms_default(uint32_t ms) {
+     soft_timer_reinsert(&mp_bluetooth_hci_soft_timer, ms);
+ }
+ 
++#if MICROPY_PY_BLUETOOTH_ENABLE_HCI_CMD && defined(STM32WB)
++// Forward declaration: when the HCI stream is active, suppress NimBLE polling.
++static volatile bool hci_stream_active;
++
++bool mp_bluetooth_hci_stream_is_active(void) {
++    return hci_stream_active;
++}
++#endif
++
+ #if MICROPY_PY_BLUETOOTH_USE_SYNC_EVENTS
+ 
+ static mp_sched_node_t mp_bluetooth_hci_sched_node;
+@@ -81,12 +92,22 @@ static void run_events_scheduled_task(mp_sched_node_t *node) {
+ // Called periodically (systick) or directly (e.g. UART RX IRQ) in order to
+ // request that processing happens ASAP in the scheduler.
+ void mp_bluetooth_hci_poll_now_default(void) {
++    #if MICROPY_PY_BLUETOOTH_ENABLE_HCI_CMD && defined(STM32WB)
++    if (hci_stream_active) {
++        return;
++    }
++    #endif
+     mp_sched_schedule_node(&mp_bluetooth_hci_sched_node, run_events_scheduled_task);
+ }
+ 
+ #else // !MICROPY_PY_BLUETOOTH_USE_SYNC_EVENTS
+ 
+ void mp_bluetooth_hci_poll_now_default(void) {
++    #if MICROPY_PY_BLUETOOTH_ENABLE_HCI_CMD && defined(STM32WB)
++    if (hci_stream_active) {
++        return;
++    }
++    #endif
+     pendsv_schedule_dispatch(PENDSV_DISPATCH_BLUETOOTH_HCI, mp_bluetooth_hci_poll);
+ }
+ 
+@@ -145,6 +166,271 @@ int mp_bluetooth_hci_uart_readpacket(mp_bluetooth_hci_uart_readchar_t handler) {
+     return (len > 0) ? len : -1;
+ }
+ 
++/******************************************************************************/
++// HCI passthrough stream
++//
++// Provides a bidirectional stream that bridges host HCI traffic to the STM32WB
++// CPU2 Bluetooth controller. When active, NimBLE's internal HCI handling is
++// suppressed and the host has raw access to the HCI transport.
++
++#if MICROPY_PY_BLUETOOTH_ENABLE_HCI_CMD
++
++#include "stm32wbxx_ll_ipcc.h"
++
++#define IPCC_CH_BLE_STREAM (LL_IPCC_CHANNEL_1)
++
++#define HCI_STREAM_RX_BUF_SIZE (2048)
++#define HCI_STREAM_TX_BUF_SIZE (272)
++
++#define HCI_STREAM_STATE_IDLE       (0)
++#define HCI_STREAM_STATE_NEED_LEN   (1)
++#define HCI_STREAM_STATE_IN_PAYLOAD (2)
++
++#define HCI_STREAM_KIND_BT_CMD (0x01)
++#define HCI_STREAM_KIND_BT_ACL (0x02)
++
++typedef struct {
++    mp_obj_base_t base;
++    uint8_t rx_buf[HCI_STREAM_RX_BUF_SIZE];
++    volatile uint16_t rx_head, rx_tail;
++    volatile bool rx_overflow;
++    uint8_t tx_buf[HCI_STREAM_TX_BUF_SIZE];
++    uint16_t tx_len, tx_rx;
++    uint8_t tx_state, tx_cmd_type;
++} mp_bluetooth_hci_stream_obj_t;
++
++static mp_bluetooth_hci_stream_obj_t hci_stream_obj;
++
++static inline uint16_t hci_stream_rx_avail(void) {
++    return (uint16_t)(hci_stream_obj.rx_head - hci_stream_obj.rx_tail);
++}
++
++static void hci_stream_rx_put(const uint8_t *buf, size_t len) {
++    for (size_t i = 0; i < len; ++i) {
++        if (hci_stream_rx_avail() < HCI_STREAM_RX_BUF_SIZE) {
++            hci_stream_obj.rx_buf[hci_stream_obj.rx_head % HCI_STREAM_RX_BUF_SIZE] = buf[i];
++            hci_stream_obj.rx_head++;
++        } else {
++            hci_stream_obj.rx_overflow = true;
++        }
++    }
++}
++
++static void hci_stream_drain_cb(void *env, const uint8_t *buf, size_t len) {
++    (void)env;
++    hci_stream_rx_put(buf, len);
++}
++
++static void hci_stream_drain_ipcc(void) {
++    rfcore_ble_drain_msg(hci_stream_drain_cb, NULL);
++}
++
++static mp_uint_t hci_stream_read(mp_obj_t self_in, void *buf_in, mp_uint_t size, int *errcode) {
++    (void)self_in;
++    uint8_t *buf = (uint8_t *)buf_in;
++
++    // Drain any pending IPCC events into ring buffer.
++    if (LL_C2_IPCC_IsActiveFlag_CHx(IPCC, IPCC_CH_BLE_STREAM)) {
++        LL_C1_IPCC_DisableReceiveChannel(IPCC, IPCC_CH_BLE_STREAM);
++        hci_stream_drain_ipcc();
++    }
++
++    // If a previous overflow occurred, signal loss of synchronization.
++    if (hci_stream_obj.rx_overflow) {
++        hci_stream_obj.rx_overflow = false;
++        hci_stream_obj.rx_head = 0;
++        hci_stream_obj.rx_tail = 0;
++        *errcode = MP_EIO;
++        return MP_STREAM_ERROR;
++    }
++
++    uint16_t avail = hci_stream_rx_avail();
++    if (avail == 0) {
++        *errcode = MP_EAGAIN;
++        return MP_STREAM_ERROR;
++    }
++
++    uint16_t to_copy = (size < avail) ? (uint16_t)size : avail;
++    for (uint16_t i = 0; i < to_copy; ++i) {
++        buf[i] = hci_stream_obj.rx_buf[hci_stream_obj.rx_tail % HCI_STREAM_RX_BUF_SIZE];
++        hci_stream_obj.rx_tail++;
++    }
++
++    return to_copy;
++}
++
++static mp_uint_t hci_stream_write(mp_obj_t self_in, const void *buf_in, mp_uint_t size, int *errcode) {
++    (void)self_in;
++    const uint8_t *buf = (const uint8_t *)buf_in;
++    mp_uint_t consumed = 0;
++
++    while (consumed < size) {
++        uint8_t c = buf[consumed];
++
++        if (hci_stream_obj.tx_state == HCI_STREAM_STATE_IDLE) {
++            if (c == HCI_STREAM_KIND_BT_CMD || c == HCI_STREAM_KIND_BT_ACL) {
++                hci_stream_obj.tx_cmd_type = c;
++                hci_stream_obj.tx_state = HCI_STREAM_STATE_NEED_LEN;
++                hci_stream_obj.tx_buf[0] = c;
++                hci_stream_obj.tx_rx = 1;
++                hci_stream_obj.tx_len = 0;
++                consumed++;
++            } else {
++                if (consumed > 0) {
++                    return consumed;
++                }
++                *errcode = MP_EINVAL;
++                return MP_STREAM_ERROR;
++            }
++        } else if (hci_stream_obj.tx_state == HCI_STREAM_STATE_NEED_LEN) {
++            hci_stream_obj.tx_buf[hci_stream_obj.tx_rx++] = c;
++            consumed++;
++
++            if (hci_stream_obj.tx_cmd_type == HCI_STREAM_KIND_BT_ACL && hci_stream_obj.tx_rx == 4) {
++                hci_stream_obj.tx_len = c;
++            } else if (hci_stream_obj.tx_cmd_type == HCI_STREAM_KIND_BT_ACL && hci_stream_obj.tx_rx == 5) {
++                hci_stream_obj.tx_len += ((uint16_t)c) << 8;
++                hci_stream_obj.tx_state = HCI_STREAM_STATE_IN_PAYLOAD;
++                if (hci_stream_obj.tx_rx + hci_stream_obj.tx_len > HCI_STREAM_TX_BUF_SIZE) {
++                    hci_stream_obj.tx_state = HCI_STREAM_STATE_IDLE;
++                    *errcode = MP_ENOMEM;
++                    return MP_STREAM_ERROR;
++                }
++            } else if (hci_stream_obj.tx_cmd_type == HCI_STREAM_KIND_BT_CMD && hci_stream_obj.tx_rx == 4) {
++                hci_stream_obj.tx_len = c;
++                hci_stream_obj.tx_state = HCI_STREAM_STATE_IN_PAYLOAD;
++                if (hci_stream_obj.tx_rx + hci_stream_obj.tx_len > HCI_STREAM_TX_BUF_SIZE) {
++                    hci_stream_obj.tx_state = HCI_STREAM_STATE_IDLE;
++                    *errcode = MP_ENOMEM;
++                    return MP_STREAM_ERROR;
++                }
++            }
++        } else {
++            // STATE_IN_PAYLOAD: bulk copy remaining payload bytes.
++            uint16_t remaining = hci_stream_obj.tx_len;
++            mp_uint_t input_left = size - consumed;
++            uint16_t chunk = (input_left < remaining) ? (uint16_t)input_left : remaining;
++
++            memcpy(&hci_stream_obj.tx_buf[hci_stream_obj.tx_rx], &buf[consumed], chunk);
++            hci_stream_obj.tx_rx += chunk;
++            hci_stream_obj.tx_len -= chunk;
++            consumed += chunk;
++        }
++
++        // Dispatch complete packet.
++        if (hci_stream_obj.tx_state == HCI_STREAM_STATE_IN_PAYLOAD && hci_stream_obj.tx_len == 0) {
++            if (hci_stream_obj.tx_cmd_type == HCI_STREAM_KIND_BT_CMD) {
++                // Synchronous command+response: busy-wait for CPU2 ack, drain response to ring buffer.
++                rfcore_ble_hci_cmd_resp(hci_stream_obj.tx_rx, hci_stream_obj.tx_buf,
++                                        hci_stream_drain_cb, NULL);
++            } else {
++                // ACL data: fire-and-forget (flow controlled by hci_acl_cmd_pending).
++                rfcore_ble_hci_cmd(hci_stream_obj.tx_rx, hci_stream_obj.tx_buf);
++            }
++
++            hci_stream_obj.tx_state = HCI_STREAM_STATE_IDLE;
++            hci_stream_obj.tx_rx = 0;
++        }
++    }
++
++    return consumed;
++}
++
++static mp_uint_t hci_stream_ioctl(mp_obj_t self_in, mp_uint_t request, uintptr_t arg, int *errcode) {
++    (void)self_in;
++
++    if (request == MP_STREAM_POLL) {
++        mp_uint_t flags = arg;
++        mp_uint_t ret = 0;
++
++        if ((flags & MP_STREAM_POLL_RD) &&
++            (hci_stream_rx_avail() > 0 || LL_C2_IPCC_IsActiveFlag_CHx(IPCC, IPCC_CH_BLE_STREAM))) {
++            ret |= MP_STREAM_POLL_RD;
++        }
++        if (flags & MP_STREAM_POLL_WR) {
++            ret |= MP_STREAM_POLL_WR;
++        }
++        return ret;
++    }
++
++    if (request == MP_STREAM_CLOSE) {
++        hci_stream_active = false;
++        hci_stream_obj.rx_head = 0;
++        hci_stream_obj.rx_tail = 0;
++        hci_stream_obj.tx_state = HCI_STREAM_STATE_IDLE;
++        hci_stream_obj.tx_rx = 0;
++        rfcore_ble_reset();
++        return 0;
++    }
++
++    *errcode = MP_EINVAL;
++    return MP_STREAM_ERROR;
++}
++
++static mp_obj_t hci_stream_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args) {
++    mp_arg_check_num(n_args, n_kw, 0, 0, false);
++
++    if (hci_stream_active) {
++        mp_raise_OSError(MP_EBUSY);
++    }
++
++    // Deinit NimBLE if it's currently active.
++    mp_bluetooth_deinit();
++
++    // Ensure CPU2 BLE controller is initialized.
++    rfcore_ble_init();
++
++    // Reset stream state.
++    hci_stream_obj.base.type = type;
++    hci_stream_obj.rx_head = 0;
++    hci_stream_obj.rx_tail = 0;
++    hci_stream_obj.rx_overflow = false;
++    hci_stream_obj.tx_state = HCI_STREAM_STATE_IDLE;
++    hci_stream_obj.tx_rx = 0;
++
++    hci_stream_active = true;
++
++    // Drain any stale IPCC events.
++    if (LL_C2_IPCC_IsActiveFlag_CHx(IPCC, IPCC_CH_BLE_STREAM)) {
++        LL_C1_IPCC_DisableReceiveChannel(IPCC, IPCC_CH_BLE_STREAM);
++        rfcore_ble_drain_msg(NULL, NULL);
++    }
++
++    return MP_OBJ_FROM_PTR(&hci_stream_obj);
++}
++
++static mp_obj_t hci_stream_close(mp_obj_t self_in) {
++    int errcode;
++    hci_stream_ioctl(self_in, MP_STREAM_CLOSE, 0, &errcode);
++    return mp_const_none;
++}
++static MP_DEFINE_CONST_FUN_OBJ_1(hci_stream_close_obj, hci_stream_close);
++
++static const mp_rom_map_elem_t hci_stream_locals_dict_table[] = {
++    { MP_ROM_QSTR(MP_QSTR_read), MP_ROM_PTR(&mp_stream_read_obj) },
++    { MP_ROM_QSTR(MP_QSTR_readinto), MP_ROM_PTR(&mp_stream_readinto_obj) },
++    { MP_ROM_QSTR(MP_QSTR_write), MP_ROM_PTR(&mp_stream_write_obj) },
++    { MP_ROM_QSTR(MP_QSTR_close), MP_ROM_PTR(&hci_stream_close_obj) },
++};
++static MP_DEFINE_CONST_DICT(hci_stream_locals_dict, hci_stream_locals_dict_table);
++
++static const mp_stream_p_t hci_stream_p = {
++    .read = hci_stream_read,
++    .write = hci_stream_write,
++    .ioctl = hci_stream_ioctl,
++};
++
++MP_DEFINE_CONST_OBJ_TYPE(
++    mp_bluetooth_hci_stream_type,
++    MP_QSTR_HCITransport,
++    MP_TYPE_FLAG_ITER_IS_STREAM,
++    make_new, hci_stream_make_new,
++    protocol, &hci_stream_p,
++    locals_dict, &hci_stream_locals_dict
++);
++
++#endif // MICROPY_PY_BLUETOOTH_ENABLE_HCI_CMD
++
+ #else
+ 
+ /******************************************************************************/
+diff --git a/ports/stm32/mpbthciport.h b/ports/stm32/mpbthciport.h
+index d510ab52a..d7634f010 100644
+--- a/ports/stm32/mpbthciport.h
++++ b/ports/stm32/mpbthciport.h
+@@ -51,4 +51,9 @@ static inline void mp_bluetooth_hci_poll_in_ms(uint32_t ms) {
+ // mp_bluetooth_hci_poll_now/mp_bluetooth_hci_poll_in_ms instead.
+ void mp_bluetooth_hci_poll(void);
+ 
++#if MICROPY_PY_BLUETOOTH_ENABLE_HCI_CMD && defined(STM32WB)
++extern const mp_obj_type_t mp_bluetooth_hci_stream_type;
++bool mp_bluetooth_hci_stream_is_active(void);
++#endif
++
+ #endif // MICROPY_INCLUDED_STM32_MPBTHCIPORT_H
