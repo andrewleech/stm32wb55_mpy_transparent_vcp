@@ -101,11 +101,22 @@ patch-hci-stream:
 		git apply ../$(PATCHES_DIR)/hci_uart_stream.patch; \
 	fi
 
+# Set USB product strings for WB55 boards (idempotent)
+.PHONY: patch-usb-product-string
+patch-usb-product-string:
+	@cd $(MPY_DIR) && \
+	if git apply --check --reverse ../$(PATCHES_DIR)/usb_product_string.patch 2>/dev/null; then \
+		echo "Patch usb_product_string already applied"; \
+	else \
+		echo "Applying usb_product_string patch..."; \
+		git apply ../$(PATCHES_DIR)/usb_product_string.patch; \
+	fi
+
 # ===== FIRMWARE TARGETS =====
 
 # Build firmware for the STM32WB55 Nucleo board
 .PHONY: build-firmware-nucleo
-build-firmware-nucleo: mpy-cross patch-firmware patch-hci-stream
+build-firmware-nucleo: mpy-cross patch-firmware patch-hci-stream patch-usb-product-string
 	@echo "Building MicroPython firmware for STM32WB55 Nucleo board..."
 	@mkdir -p $(FIRMWARE_DIR)/$(NUCLEO_BOARD)
 	@cd $(STM32_PORT) && $(MAKE) BOARD=$(NUCLEO_BOARD) CFLAGS_EXTRA="$(CFLAGS_EXTRA)" submodules all
@@ -114,7 +125,7 @@ build-firmware-nucleo: mpy-cross patch-firmware patch-hci-stream
 
 # Build firmware for the STM32WB55 USB Dongle
 .PHONY: build-firmware-dongle
-build-firmware-dongle: mpy-cross patch-firmware patch-hci-stream
+build-firmware-dongle: mpy-cross patch-firmware patch-hci-stream patch-usb-product-string
 	@echo "Building MicroPython firmware for STM32WB55 USB Dongle..."
 	@mkdir -p $(FIRMWARE_DIR)/$(DONGLE_BOARD)
 	@cd $(STM32_PORT) && $(MAKE) BOARD=$(DONGLE_BOARD) CFLAGS_EXTRA="$(CFLAGS_EXTRA)" submodules all

@@ -1,0 +1,24 @@
+diff --git a/ports/stm32/boards/NUCLEO_WB55/mpconfigboard.h b/ports/stm32/boards/NUCLEO_WB55/mpconfigboard.h
+index 19b911a2e..583f22956 100644
+--- a/ports/stm32/boards/NUCLEO_WB55/mpconfigboard.h
++++ b/ports/stm32/boards/NUCLEO_WB55/mpconfigboard.h
+@@ -61,6 +61,7 @@
+ #define MICROPY_HW_USB_FS           (1)
+ #define MICROPY_HW_USB_CDC_RX_DATA_SIZE (512)
+ #define MICROPY_HW_USB_CDC_TX_DATA_SIZE (512)
++#define MICROPY_HW_USB_PRODUCT_FS_STRING "WB55 Nucleo VCP-BLE"
+ 
+ // Bluetooth config
+ #define MICROPY_HW_BLE_UART_ID       (0)
+diff --git a/ports/stm32/boards/USBDONGLE_WB55/mpconfigboard.h b/ports/stm32/boards/USBDONGLE_WB55/mpconfigboard.h
+index d4b12ae5b..229f7a0dc 100644
+--- a/ports/stm32/boards/USBDONGLE_WB55/mpconfigboard.h
++++ b/ports/stm32/boards/USBDONGLE_WB55/mpconfigboard.h
+@@ -45,6 +45,7 @@
+ #define MICROPY_HW_USB_FS           (1)
+ #define MICROPY_HW_USB_CDC_RX_DATA_SIZE (512)
+ #define MICROPY_HW_USB_CDC_TX_DATA_SIZE (512)
++#define MICROPY_HW_USB_PRODUCT_FS_STRING "WB55 Dongle VCP-BLE"
+ 
+ // Bluetooth config
+ #define MICROPY_HW_BLE_UART_ID       (0)
