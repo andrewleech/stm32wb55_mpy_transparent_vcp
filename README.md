@@ -18,6 +18,13 @@ make deploy-firmware-nucleo
 
 After flashing, the board enumerates two USB CDC interfaces: VCP 0 (MicroPython REPL) and VCP 1 (HCI transport). The HCI relay starts automatically via `main.py`.
 
+The firmware sets a USB product string that identifies the board variant. On Linux, both CDC interfaces appear under `/dev/serial/by-id/` with stable names:
+
+- **Nucleo:** `usb-WB55_Nucleo_VCP-BLE_*-if00` (REPL) and `usb-WB55_Nucleo_VCP-BLE_*-if02` (HCI)
+- **Dongle:** `usb-WB55_Dongle_VCP-BLE_*-if00` (REPL) and `usb-WB55_Dongle_VCP-BLE_*-if02` (HCI)
+
+The `if02` interface is the HCI transport used by the Unix port and BlueZ.
+
 ## Build Targets
 
 | Target | Description |
@@ -39,14 +46,18 @@ After flashing, the board enumerates two USB CDC interfaces: VCP 0 (MicroPython 
 | Variable | Description |
 |----------|-------------|
 | `DEVICE` | Device identifier for mpremote (e.g., `auto-com3`) |
-| `MICROPYBTUART` | Serial port for Unix port BLE adapter (e.g., `/dev/ttyACM2`) |
+| `MICROPYBTUART` | HCI serial port for Unix port BLE adapter (e.g., `/dev/serial/by-id/usb-WB55_Dongle_VCP-BLE_*-if02`) |
 
 ## Usage with MicroPython Unix Port
 
-The STM32WB55 running transparent mode can serve as a BLE HCI adapter for the MicroPython Unix port:
+The STM32WB55 running transparent mode can serve as a BLE HCI adapter for the MicroPython Unix port. Use the `if02` (HCI) interface from `/dev/serial/by-id/`:
 
 ```bash
-make run-unix MICROPYBTUART=/dev/ttyACM2
+# Dongle
+make run-unix MICROPYBTUART=/dev/serial/by-id/usb-WB55_Dongle_VCP-BLE_*-if02
+
+# Nucleo
+make run-unix MICROPYBTUART=/dev/serial/by-id/usb-WB55_Nucleo_VCP-BLE_*-if02
 ```
 
 Then from the MicroPython REPL:
@@ -62,7 +73,7 @@ ble.active(True)
 Attach the HCI VCP interface to BlueZ:
 
 ```bash
-sudo btattach -B /dev/ttyACM2 -S 115200 -P h4
+sudo btattach -B /dev/serial/by-id/usb-WB55_Dongle_VCP-BLE_*-if02 -S 115200 -P h4
 ```
 
 The dongle will appear as an HCI device visible to `hciconfig`, `bluetoothctl`, etc.
@@ -79,6 +90,7 @@ src/
 patches/
   rfcore_ble_hci.patch       — Exposes firmware HCI stream to Python
   hci_uart_stream.patch      — HCI UART stream support for stm32 port
+  usb_product_string.patch   — Sets board-specific USB product strings
   unix_hci_uart_no_crtscts.patch — Disables CTS/RTS for Unix port HCI UART
 micropython/                 — MicroPython submodule (initialised on first build)
 .github/workflows/           — CI: firmware builds for both boards + Unix port
